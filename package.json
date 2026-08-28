@@ -1,0 +1,23 @@
+{
+  "name": "n3xtime",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@11.24.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @n3xtime/api --filter @n3xtime/web run dev",
+    "dev:api": "pnpm --filter @n3xtime/api dev",
+    "dev:web": "pnpm --filter @n3xtime/web dev",
+    "build": "pnpm -r run build",
+    "build:api": "pnpm --filter @n3xtime/api build",
+    "build:web": "pnpm --filter @n3xtime/web build",
+    "lint": "pnpm --filter @n3xtime/web lint",
+    "typecheck": "pnpm --filter @n3xtime/web typecheck",
+    "db:validate": "pnpm --filter @n3xtime/database db:validate",
+    "db:diff": "pnpm --filter @n3xtime/database db:diff",
+    "db:migrate:dev": "pnpm --filter @n3xtime/database db:migrate:dev",
+    "db:migrate:deploy": "pnpm --filter @n3xtime/database db:migrate:deploy",
+    "db:migrate:status": "pnpm --filter @n3xtime/database db:migrate:status",
+    "db:format": "pnpm --filter @n3xtime/database db:format",
+    "db:studio": "pnpm --filter @n3xtime/database db:studio"
+  }
+}

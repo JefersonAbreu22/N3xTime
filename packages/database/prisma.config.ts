@@ -1,5 +1,14 @@
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'prisma/config';
+
+const packageDir = dirname(fileURLToPath(import.meta.url));
+
+// Preserve the current environment location after moving Prisma out of the API.
+// A root .env is loaded as a fallback for future workspace-wide configuration.
+loadEnv({ path: resolve(packageDir, '../../apps/api/.env') });
+loadEnv({ path: resolve(packageDir, '../../.env') });
 
 const requiredDatabaseVariable = (name: 'DB_HOST' | 'DB_NAME' | 'DB_USER' | 'DB_PASS') => {
   const value = process.env[name]?.trim();

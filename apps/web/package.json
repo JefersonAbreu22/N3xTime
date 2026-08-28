@@ -1,11 +1,12 @@
 {
-  "name": "n3xtime-frontend",
+  "name": "@n3xtime/web",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build",
-    "dev": "tsc",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "start": "node server.cjs"
   },

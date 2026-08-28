@@ -1,0 +1,901 @@
+diff --git a/.gitignore b/.gitignore
+index 316692c259e01f27bc79af73ff091512f4b1600e..332158267e9c06b621ca68eb00fcee6c61078369 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -43,8 +43,8 @@ pids/
+ *.seed
+ 
+ # Runtime uploads and generated files
+-backend/api/uploads/
+-backend/uploads/
++apps/api/api/uploads/
++apps/api/uploads/
+ uploads/
+ *.tmp
+ *.temp
+@@ -58,8 +58,8 @@ uploads/
+ *.backup
+ *.sqlite
+ *.sqlite3
+-backend/dump_*.sql
+-!backend/prisma/migrations/**/*.sql
++apps/api/dump_*.sql
++!packages/database/prisma/migrations/**/*.sql
+ 
+ # Coverage / test output
+ coverage/
+diff --git a/backend/.env.example b/apps/api/.env.example
+similarity index 100%
+rename from backend/.env.example
+rename to apps/api/.env.example
+diff --git a/backend/api/app.ts b/apps/api/api/app.ts
+similarity index 100%
+rename from backend/api/app.ts
+rename to apps/api/api/app.ts
+diff --git a/backend/api/config/database.ts b/apps/api/api/config/database.ts
+similarity index 100%
+rename from backend/api/config/database.ts
+rename to apps/api/api/config/database.ts
+diff --git a/backend/api/controllers/authController.ts b/apps/api/api/controllers/authController.ts
+similarity index 100%
+rename from backend/api/controllers/authController.ts
+rename to apps/api/api/controllers/authController.ts
+diff --git a/backend/api/controllers/companyController.ts b/apps/api/api/controllers/companyController.ts
+similarity index 100%
+rename from backend/api/controllers/companyController.ts
+rename to apps/api/api/controllers/companyController.ts
+diff --git a/backend/api/controllers/departmentController.ts b/apps/api/api/controllers/departmentController.ts
+similarity index 100%
+rename from backend/api/controllers/departmentController.ts
+rename to apps/api/api/controllers/departmentController.ts
+diff --git a/backend/api/controllers/fileController.ts b/apps/api/api/controllers/fileController.ts
+similarity index 100%
+rename from backend/api/controllers/fileController.ts
+rename to apps/api/api/controllers/fileController.ts
+diff --git a/backend/api/controllers/holidayController.ts b/apps/api/api/controllers/holidayController.ts
+similarity index 100%
+rename from backend/api/controllers/holidayController.ts
+rename to apps/api/api/controllers/holidayController.ts
+diff --git a/backend/api/controllers/platformController.ts b/apps/api/api/controllers/platformController.ts
+similarity index 100%
+rename from backend/api/controllers/platformController.ts
+rename to apps/api/api/controllers/platformController.ts
+diff --git a/backend/api/controllers/recordController.ts b/apps/api/api/controllers/recordController.ts
+similarity index 100%
+rename from backend/api/controllers/recordController.ts
+rename to apps/api/api/controllers/recordController.ts
+diff --git a/backend/api/controllers/reportController.ts b/apps/api/api/controllers/reportController.ts
+similarity index 100%
+rename from backend/api/controllers/reportController.ts
+rename to apps/api/api/controllers/reportController.ts
+diff --git a/backend/api/controllers/requestController.ts b/apps/api/api/controllers/requestController.ts
+similarity index 100%
+rename from backend/api/controllers/requestController.ts
+rename to apps/api/api/controllers/requestController.ts
+diff --git a/backend/api/controllers/userController.ts b/apps/api/api/controllers/userController.ts
+similarity index 100%
+rename from backend/api/controllers/userController.ts
+rename to apps/api/api/controllers/userController.ts
+diff --git a/backend/api/index.ts b/apps/api/api/index.ts
+similarity index 100%
+rename from backend/api/index.ts
+rename to apps/api/api/index.ts
+diff --git a/backend/api/middlewares/authMiddleware.ts b/apps/api/api/middlewares/authMiddleware.ts
+similarity index 100%
+rename from backend/api/middlewares/authMiddleware.ts
+rename to apps/api/api/middlewares/authMiddleware.ts
+diff --git a/backend/api/middlewares/remotePhotoUpload.ts b/apps/api/api/middlewares/remotePhotoUpload.ts
+similarity index 100%
+rename from backend/api/middlewares/remotePhotoUpload.ts
+rename to apps/api/api/middlewares/remotePhotoUpload.ts
+diff --git a/backend/api/middlewares/requestAttachmentUpload.ts b/apps/api/api/middlewares/requestAttachmentUpload.ts
+similarity index 100%
+rename from backend/api/middlewares/requestAttachmentUpload.ts
+rename to apps/api/api/middlewares/requestAttachmentUpload.ts
+diff --git a/backend/api/models/AttendanceSummary.ts b/apps/api/api/models/AttendanceSummary.ts
+similarity index 100%
+rename from backend/api/models/AttendanceSummary.ts
+rename to apps/api/api/models/AttendanceSummary.ts
+diff --git a/backend/api/models/AuditLog.ts b/apps/api/api/models/AuditLog.ts
+similarity index 100%
+rename from backend/api/models/AuditLog.ts
+rename to apps/api/api/models/AuditLog.ts
+diff --git a/backend/api/models/BiometricEvent.ts b/apps/api/api/models/BiometricEvent.ts
+similarity index 100%
+rename from backend/api/models/BiometricEvent.ts
+rename to apps/api/api/models/BiometricEvent.ts
+diff --git a/backend/api/models/BiometricSample.ts b/apps/api/api/models/BiometricSample.ts
+similarity index 100%
+rename from backend/api/models/BiometricSample.ts
+rename to apps/api/api/models/BiometricSample.ts
+diff --git a/backend/api/models/Company.ts b/apps/api/api/models/Company.ts
+similarity index 100%
+rename from backend/api/models/Company.ts
+rename to apps/api/api/models/Company.ts
+diff --git a/backend/api/models/CompanyProfile.ts b/apps/api/api/models/CompanyProfile.ts
+similarity index 100%
+rename from backend/api/models/CompanyProfile.ts
+rename to apps/api/api/models/CompanyProfile.ts
+diff --git a/backend/api/models/Department.ts b/apps/api/api/models/Department.ts
+similarity index 100%
+rename from backend/api/models/Department.ts
+rename to apps/api/api/models/Department.ts
+diff --git a/backend/api/models/DepartmentHierarchyLevel.ts b/apps/api/api/models/DepartmentHierarchyLevel.ts
+similarity index 100%
+rename from backend/api/models/DepartmentHierarchyLevel.ts
+rename to apps/api/api/models/DepartmentHierarchyLevel.ts
+diff --git a/backend/api/models/DepartmentLeaderAssignment.ts b/apps/api/api/models/DepartmentLeaderAssignment.ts
+similarity index 100%
+rename from backend/api/models/DepartmentLeaderAssignment.ts
+rename to apps/api/api/models/DepartmentLeaderAssignment.ts
+diff --git a/backend/api/models/EmailDeliveryFailure.ts b/apps/api/api/models/EmailDeliveryFailure.ts
+similarity index 100%
+rename from backend/api/models/EmailDeliveryFailure.ts
+rename to apps/api/api/models/EmailDeliveryFailure.ts
+diff --git a/backend/api/models/EmailDeliveryLog.ts b/apps/api/api/models/EmailDeliveryLog.ts
+similarity index 100%
+rename from backend/api/models/EmailDeliveryLog.ts
+rename to apps/api/api/models/EmailDeliveryLog.ts
+diff --git a/backend/api/models/EmployeeRequest.ts b/apps/api/api/models/EmployeeRequest.ts
+similarity index 100%
+rename from backend/api/models/EmployeeRequest.ts
+rename to apps/api/api/models/EmployeeRequest.ts
+diff --git a/backend/api/models/Holiday.ts b/apps/api/api/models/Holiday.ts
+similarity index 100%
+rename from backend/api/models/Holiday.ts
+rename to apps/api/api/models/Holiday.ts
+diff --git a/backend/api/models/KioskControl.ts b/apps/api/api/models/KioskControl.ts
+similarity index 100%
+rename from backend/api/models/KioskControl.ts
+rename to apps/api/api/models/KioskControl.ts
+diff --git a/backend/api/models/MonthlyClosing.ts b/apps/api/api/models/MonthlyClosing.ts
+similarity index 100%
+rename from backend/api/models/MonthlyClosing.ts
+rename to apps/api/api/models/MonthlyClosing.ts
+diff --git a/backend/api/models/PlatformAuditLog.ts b/apps/api/api/models/PlatformAuditLog.ts
+similarity index 100%
+rename from backend/api/models/PlatformAuditLog.ts
+rename to apps/api/api/models/PlatformAuditLog.ts
+diff --git a/backend/api/models/PlatformUser.ts b/apps/api/api/models/PlatformUser.ts
+similarity index 100%
+rename from backend/api/models/PlatformUser.ts
+rename to apps/api/api/models/PlatformUser.ts
+diff --git a/backend/api/models/RemotePhotoEvidence.ts b/apps/api/api/models/RemotePhotoEvidence.ts
+similarity index 100%
+rename from backend/api/models/RemotePhotoEvidence.ts
+rename to apps/api/api/models/RemotePhotoEvidence.ts
+diff --git a/backend/api/models/TimeRecord.ts b/apps/api/api/models/TimeRecord.ts
+similarity index 100%
+rename from backend/api/models/TimeRecord.ts
+rename to apps/api/api/models/TimeRecord.ts
+diff --git a/backend/api/models/User.ts b/apps/api/api/models/User.ts
+similarity index 100%
+rename from backend/api/models/User.ts
+rename to apps/api/api/models/User.ts
+diff --git a/backend/api/models/WorkSchedule.ts b/apps/api/api/models/WorkSchedule.ts
+similarity index 100%
+rename from backend/api/models/WorkSchedule.ts
+rename to apps/api/api/models/WorkSchedule.ts
+diff --git a/backend/api/models/index.ts b/apps/api/api/models/index.ts
+similarity index 100%
+rename from backend/api/models/index.ts
+rename to apps/api/api/models/index.ts
+diff --git a/backend/api/routes/auth.ts b/apps/api/api/routes/auth.ts
+similarity index 100%
+rename from backend/api/routes/auth.ts
+rename to apps/api/api/routes/auth.ts
+diff --git a/backend/api/routes/company.ts b/apps/api/api/routes/company.ts
+similarity index 100%
+rename from backend/api/routes/company.ts
+rename to apps/api/api/routes/company.ts
+diff --git a/backend/api/routes/departments.ts b/apps/api/api/routes/departments.ts
+similarity index 100%
+rename from backend/api/routes/departments.ts
+rename to apps/api/api/routes/departments.ts
+diff --git a/backend/api/routes/files.ts b/apps/api/api/routes/files.ts
+similarity index 100%
+rename from backend/api/routes/files.ts
+rename to apps/api/api/routes/files.ts
+diff --git a/backend/api/routes/holidays.ts b/apps/api/api/routes/holidays.ts
+similarity index 100%
+rename from backend/api/routes/holidays.ts
+rename to apps/api/api/routes/holidays.ts
+diff --git a/backend/api/routes/platform.ts b/apps/api/api/routes/platform.ts
+similarity index 100%
+rename from backend/api/routes/platform.ts
+rename to apps/api/api/routes/platform.ts
+diff --git a/backend/api/routes/records.ts b/apps/api/api/routes/records.ts
+similarity index 100%
+rename from backend/api/routes/records.ts
+rename to apps/api/api/routes/records.ts
+diff --git a/backend/api/routes/reports.ts b/apps/api/api/routes/reports.ts
+similarity index 100%
+rename from backend/api/routes/reports.ts
+rename to apps/api/api/routes/reports.ts
+diff --git a/backend/api/routes/requests.ts b/apps/api/api/routes/requests.ts
+similarity index 100%
+rename from backend/api/routes/requests.ts
+rename to apps/api/api/routes/requests.ts
+diff --git a/backend/api/routes/users.ts b/apps/api/api/routes/users.ts
+similarity index 100%
+rename from backend/api/routes/users.ts
+rename to apps/api/api/routes/users.ts
+diff --git a/backend/api/scripts/seedAdmin.ts b/apps/api/api/scripts/seedAdmin.ts
+similarity index 100%
+rename from backend/api/scripts/seedAdmin.ts
+rename to apps/api/api/scripts/seedAdmin.ts
+diff --git a/backend/api/scripts/seedPlatformAdmin.ts b/apps/api/api/scripts/seedPlatformAdmin.ts
+similarity index 100%
+rename from backend/api/scripts/seedPlatformAdmin.ts
+rename to apps/api/api/scripts/seedPlatformAdmin.ts
+diff --git a/backend/api/server.ts b/apps/api/api/server.ts
+similarity index 100%
+rename from backend/api/server.ts
+rename to apps/api/api/server.ts
+diff --git a/backend/api/services/AttendanceCalculator.ts b/apps/api/api/services/AttendanceCalculator.ts
+similarity index 100%
+rename from backend/api/services/AttendanceCalculator.ts
+rename to apps/api/api/services/AttendanceCalculator.ts
+diff --git a/backend/api/services/AttendanceService.ts b/apps/api/api/services/AttendanceService.ts
+similarity index 100%
+rename from backend/api/services/AttendanceService.ts
+rename to apps/api/api/services/AttendanceService.ts
+diff --git a/backend/api/services/AuditService.ts b/apps/api/api/services/AuditService.ts
+similarity index 100%
+rename from backend/api/services/AuditService.ts
+rename to apps/api/api/services/AuditService.ts
+diff --git a/backend/api/services/PasswordResetEmailService.ts b/apps/api/api/services/PasswordResetEmailService.ts
+similarity index 100%
+rename from backend/api/services/PasswordResetEmailService.ts
+rename to apps/api/api/services/PasswordResetEmailService.ts
+diff --git a/backend/api/services/RemotePhotoRetentionService.ts b/apps/api/api/services/RemotePhotoRetentionService.ts
+similarity index 100%
+rename from backend/api/services/RemotePhotoRetentionService.ts
+rename to apps/api/api/services/RemotePhotoRetentionService.ts
+diff --git a/backend/api/services/TimeRecordEmailService.ts b/apps/api/api/services/TimeRecordEmailService.ts
+similarity index 100%
+rename from backend/api/services/TimeRecordEmailService.ts
+rename to apps/api/api/services/TimeRecordEmailService.ts
+diff --git a/backend/api/tenancy/configureTenantModel.ts b/apps/api/api/tenancy/configureTenantModel.ts
+similarity index 100%
+rename from backend/api/tenancy/configureTenantModel.ts
+rename to apps/api/api/tenancy/configureTenantModel.ts
+diff --git a/backend/api/tenancy/tenantContext.ts b/apps/api/api/tenancy/tenantContext.ts
+similarity index 100%
+rename from backend/api/tenancy/tenantContext.ts
+rename to apps/api/api/tenancy/tenantContext.ts
+diff --git a/backend/api/tenancy/tenantReferenceGuard.ts b/apps/api/api/tenancy/tenantReferenceGuard.ts
+similarity index 100%
+rename from backend/api/tenancy/tenantReferenceGuard.ts
+rename to apps/api/api/tenancy/tenantReferenceGuard.ts
+diff --git a/backend/api/tests/multitenancy.integration.ts b/apps/api/api/tests/multitenancy.integration.ts
+similarity index 100%
+rename from backend/api/tests/multitenancy.integration.ts
+rename to apps/api/api/tests/multitenancy.integration.ts
+diff --git a/backend/api/utils/geo.ts b/apps/api/api/utils/geo.ts
+similarity index 100%
+rename from backend/api/utils/geo.ts
+rename to apps/api/api/utils/geo.ts
+diff --git a/backend/api/utils/kioskKey.ts b/apps/api/api/utils/kioskKey.ts
+similarity index 100%
+rename from backend/api/utils/kioskKey.ts
+rename to apps/api/api/utils/kioskKey.ts
+diff --git a/backend/api/utils/leadership.ts b/apps/api/api/utils/leadership.ts
+similarity index 100%
+rename from backend/api/utils/leadership.ts
+rename to apps/api/api/utils/leadership.ts
+diff --git a/backend/api/utils/monthlyClosing.ts b/apps/api/api/utils/monthlyClosing.ts
+similarity index 100%
+rename from backend/api/utils/monthlyClosing.ts
+rename to apps/api/api/utils/monthlyClosing.ts
+diff --git a/backend/api/validation/dateOnly.ts b/apps/api/api/validation/dateOnly.ts
+similarity index 100%
+rename from backend/api/validation/dateOnly.ts
+rename to apps/api/api/validation/dateOnly.ts
+diff --git a/backend/api/validation/passwordPolicy.ts b/apps/api/api/validation/passwordPolicy.ts
+similarity index 100%
+rename from backend/api/validation/passwordPolicy.ts
+rename to apps/api/api/validation/passwordPolicy.ts
+diff --git a/backend/nodemon.json b/apps/api/nodemon.json
+similarity index 100%
+rename from backend/nodemon.json
+rename to apps/api/nodemon.json
+diff --git a/backend/package.json b/apps/api/package.json
+similarity index 70%
+rename from backend/package.json
+rename to apps/api/package.json
+index 74286b7cd351be8cdbb987880e01b39e968571f1..90ab2a92ffe34dc37eed6ca577f8bbae491a8827 100644
+--- a/backend/package.json
++++ b/apps/api/package.json
+@@ -1,17 +1,12 @@
+ {
+-  "name": "n3xtime-backend",
++  "name": "@n3xtime/api",
+   "private": true,
+   "version": "1.0.0",
+   "type": "module",
+   "scripts": {
+     "dev": "nodemon",
+     "build": "tsc -p tsconfig.json",
+-    "db:schema:validate": "prisma validate --config prisma.config.ts",
+-    "db:schema:diff": "prisma migrate diff --config prisma.config.ts --from-config-datasource --to-schema prisma/schema.prisma",
+-    "db:migrate:dev": "prisma migrate dev --config prisma.config.ts",
+-    "db:migrate:deploy": "prisma migrate deploy --config prisma.config.ts",
+-    "db:migrate:status": "prisma migrate status --config prisma.config.ts",
+-    "deploy:prepare": "npm run build && npm run db:migrate:deploy",
++    "deploy:prepare": "pnpm run build && pnpm --filter @n3xtime/database db:migrate:deploy",
+     "test:multitenancy": "tsx api/tests/multitenancy.integration.ts",
+     "start": "tsx api/server.ts",
+     "start:prod": "node dist/api/server.js",
+@@ -48,7 +43,6 @@
+     "concurrently": "^9.2.0",
+     "kill-port": "^2.0.1",
+     "nodemon": "^3.1.10",
+-    "prisma": "^7.10.0",
+     "typescript": "~5.8.3"
+   }
+ }
+diff --git a/backend/tsconfig.json b/apps/api/tsconfig.json
+similarity index 100%
+rename from backend/tsconfig.json
+rename to apps/api/tsconfig.json
+diff --git a/frontend/.env.example b/apps/web/.env.example
+similarity index 100%
+rename from frontend/.env.example
+rename to apps/web/.env.example
+diff --git a/frontend/eslint.config.js b/apps/web/eslint.config.js
+similarity index 100%
+rename from frontend/eslint.config.js
+rename to apps/web/eslint.config.js
+diff --git a/frontend/frontend (2).zip b/apps/web/frontend (2).zip
+similarity index 100%
+rename from frontend/frontend (2).zip
+rename to apps/web/frontend (2).zip
+diff --git a/frontend/frontend (3).zip b/apps/web/frontend (3).zip
+similarity index 100%
+rename from frontend/frontend (3).zip
+rename to apps/web/frontend (3).zip
+diff --git a/frontend/frontend.zip b/apps/web/frontend.zip
+similarity index 100%
+rename from frontend/frontend.zip
+rename to apps/web/frontend.zip
+diff --git a/frontend/index.html b/apps/web/index.html
+similarity index 100%
+rename from frontend/index.html
+rename to apps/web/index.html
+diff --git a/frontend/package.json b/apps/web/package.json
+similarity index 93%
+rename from frontend/package.json
+rename to apps/web/package.json
+index d3b723b5df8fc5dc568b7620e6b9e17cb8c12f04..5345e964ff30058b75137380ca8597a30a7a80e1 100644
+--- a/frontend/package.json
++++ b/apps/web/package.json
+@@ -1,11 +1,12 @@
+ {
+-  "name": "n3xtime-frontend",
++  "name": "@n3xtime/web",
+   "private": true,
+   "version": "1.0.0",
+   "type": "module",
+   "scripts": {
+     "build": "tsc -b && vite build",
+-    "dev": "tsc",
++    "dev": "vite",
++    "typecheck": "tsc --noEmit",
+     "lint": "eslint .",
+     "start": "node server.cjs"
+   },
+diff --git a/frontend/postcss.config.js b/apps/web/postcss.config.js
+similarity index 100%
+rename from frontend/postcss.config.js
+rename to apps/web/postcss.config.js
+diff --git a/frontend/public/favicon.svg b/apps/web/public/favicon.svg
+similarity index 100%
+rename from frontend/public/favicon.svg
+rename to apps/web/public/favicon.svg
+diff --git a/frontend/public/models/face_landmark_68_model-shard1 b/apps/web/public/models/face_landmark_68_model-shard1
+similarity index 100%
+rename from frontend/public/models/face_landmark_68_model-shard1
+rename to apps/web/public/models/face_landmark_68_model-shard1
+diff --git a/frontend/public/models/face_landmark_68_model-weights_manifest.json b/apps/web/public/models/face_landmark_68_model-weights_manifest.json
+similarity index 100%
+rename from frontend/public/models/face_landmark_68_model-weights_manifest.json
+rename to apps/web/public/models/face_landmark_68_model-weights_manifest.json
+diff --git a/frontend/public/models/face_recognition_model-shard1 b/apps/web/public/models/face_recognition_model-shard1
+similarity index 100%
+rename from frontend/public/models/face_recognition_model-shard1
+rename to apps/web/public/models/face_recognition_model-shard1
+diff --git a/frontend/public/models/face_recognition_model-shard2 b/apps/web/public/models/face_recognition_model-shard2
+similarity index 100%
+rename from frontend/public/models/face_recognition_model-shard2
+rename to apps/web/public/models/face_recognition_model-shard2
+diff --git a/frontend/public/models/face_recognition_model-weights_manifest.json b/apps/web/public/models/face_recognition_model-weights_manifest.json
+similarity index 100%
+rename from frontend/public/models/face_recognition_model-weights_manifest.json
+rename to apps/web/public/models/face_recognition_model-weights_manifest.json
+diff --git a/frontend/public/models/ssd_mobilenetv1_model-shard1 b/apps/web/public/models/ssd_mobilenetv1_model-shard1
+similarity index 100%
+rename from frontend/public/models/ssd_mobilenetv1_model-shard1
+rename to apps/web/public/models/ssd_mobilenetv1_model-shard1
+diff --git a/frontend/public/models/ssd_mobilenetv1_model-shard2 b/apps/web/public/models/ssd_mobilenetv1_model-shard2
+similarity index 100%
+rename from frontend/public/models/ssd_mobilenetv1_model-shard2
+rename to apps/web/public/models/ssd_mobilenetv1_model-shard2
+diff --git a/frontend/public/models/ssd_mobilenetv1_model-weights_manifest.json b/apps/web/public/models/ssd_mobilenetv1_model-weights_manifest.json
+similarity index 100%
+rename from frontend/public/models/ssd_mobilenetv1_model-weights_manifest.json
+rename to apps/web/public/models/ssd_mobilenetv1_model-weights_manifest.json
+diff --git a/frontend/public/n3xtime.png b/apps/web/public/n3xtime.png
+similarity index 100%
+rename from frontend/public/n3xtime.png
+rename to apps/web/public/n3xtime.png
+diff --git a/frontend/server.cjs b/apps/web/server.cjs
+similarity index 100%
+rename from frontend/server.cjs
+rename to apps/web/server.cjs
+diff --git a/frontend/src/App.tsx b/apps/web/src/App.tsx
+similarity index 100%
+rename from frontend/src/App.tsx
+rename to apps/web/src/App.tsx
+diff --git a/frontend/src/assets/react.svg b/apps/web/src/assets/react.svg
+similarity index 100%
+rename from frontend/src/assets/react.svg
+rename to apps/web/src/assets/react.svg
+diff --git a/frontend/src/components/AuthRecoveryLayout.tsx b/apps/web/src/components/AuthRecoveryLayout.tsx
+similarity index 100%
+rename from frontend/src/components/AuthRecoveryLayout.tsx
+rename to apps/web/src/components/AuthRecoveryLayout.tsx
+diff --git a/frontend/src/components/ChunkLoadRecovery.tsx b/apps/web/src/components/ChunkLoadRecovery.tsx
+similarity index 100%
+rename from frontend/src/components/ChunkLoadRecovery.tsx
+rename to apps/web/src/components/ChunkLoadRecovery.tsx
+diff --git a/frontend/src/components/Empty.tsx b/apps/web/src/components/Empty.tsx
+similarity index 100%
+rename from frontend/src/components/Empty.tsx
+rename to apps/web/src/components/Empty.tsx
+diff --git a/frontend/src/components/Logo.tsx b/apps/web/src/components/Logo.tsx
+similarity index 100%
+rename from frontend/src/components/Logo.tsx
+rename to apps/web/src/components/Logo.tsx
+diff --git a/frontend/src/components/dashboard/AssignAbsenceModal.tsx b/apps/web/src/components/dashboard/AssignAbsenceModal.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/AssignAbsenceModal.tsx
+rename to apps/web/src/components/dashboard/AssignAbsenceModal.tsx
+diff --git a/frontend/src/components/dashboard/DashboardHeader.tsx b/apps/web/src/components/dashboard/DashboardHeader.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/DashboardHeader.tsx
+rename to apps/web/src/components/dashboard/DashboardHeader.tsx
+diff --git a/frontend/src/components/dashboard/DashboardSidebar.tsx b/apps/web/src/components/dashboard/DashboardSidebar.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/DashboardSidebar.tsx
+rename to apps/web/src/components/dashboard/DashboardSidebar.tsx
+diff --git a/frontend/src/components/dashboard/FaceRegistrationModal.tsx b/apps/web/src/components/dashboard/FaceRegistrationModal.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/FaceRegistrationModal.tsx
+rename to apps/web/src/components/dashboard/FaceRegistrationModal.tsx
+diff --git a/frontend/src/components/dashboard/MobileBottomNav.tsx b/apps/web/src/components/dashboard/MobileBottomNav.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/MobileBottomNav.tsx
+rename to apps/web/src/components/dashboard/MobileBottomNav.tsx
+diff --git a/frontend/src/components/dashboard/ProtectedFile.tsx b/apps/web/src/components/dashboard/ProtectedFile.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/ProtectedFile.tsx
+rename to apps/web/src/components/dashboard/ProtectedFile.tsx
+diff --git a/frontend/src/components/dashboard/RecordExceptionQueue.tsx b/apps/web/src/components/dashboard/RecordExceptionQueue.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/RecordExceptionQueue.tsx
+rename to apps/web/src/components/dashboard/RecordExceptionQueue.tsx
+diff --git a/frontend/src/components/dashboard/RecordReviewModal.tsx b/apps/web/src/components/dashboard/RecordReviewModal.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/RecordReviewModal.tsx
+rename to apps/web/src/components/dashboard/RecordReviewModal.tsx
+diff --git a/frontend/src/components/dashboard/RemoteClockInModal.tsx b/apps/web/src/components/dashboard/RemoteClockInModal.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/RemoteClockInModal.tsx
+rename to apps/web/src/components/dashboard/RemoteClockInModal.tsx
+diff --git a/frontend/src/components/dashboard/RequestAdjustmentModal.tsx b/apps/web/src/components/dashboard/RequestAdjustmentModal.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/RequestAdjustmentModal.tsx
+rename to apps/web/src/components/dashboard/RequestAdjustmentModal.tsx
+diff --git a/frontend/src/components/dashboard/RequestReviewModal.tsx b/apps/web/src/components/dashboard/RequestReviewModal.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/RequestReviewModal.tsx
+rename to apps/web/src/components/dashboard/RequestReviewModal.tsx
+diff --git a/frontend/src/components/dashboard/ReviewQueue.tsx b/apps/web/src/components/dashboard/ReviewQueue.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/ReviewQueue.tsx
+rename to apps/web/src/components/dashboard/ReviewQueue.tsx
+diff --git a/frontend/src/components/dashboard/UserCard.tsx b/apps/web/src/components/dashboard/UserCard.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/UserCard.tsx
+rename to apps/web/src/components/dashboard/UserCard.tsx
+diff --git a/frontend/src/components/dashboard/dashboardNavigation.ts b/apps/web/src/components/dashboard/dashboardNavigation.ts
+similarity index 100%
+rename from frontend/src/components/dashboard/dashboardNavigation.ts
+rename to apps/web/src/components/dashboard/dashboardNavigation.ts
+diff --git a/frontend/src/components/dashboard/dashboardUtils.ts b/apps/web/src/components/dashboard/dashboardUtils.ts
+similarity index 100%
+rename from frontend/src/components/dashboard/dashboardUtils.ts
+rename to apps/web/src/components/dashboard/dashboardUtils.ts
+diff --git a/frontend/src/components/dashboard/settings/CorporateCalendar.tsx b/apps/web/src/components/dashboard/settings/CorporateCalendar.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/settings/CorporateCalendar.tsx
+rename to apps/web/src/components/dashboard/settings/CorporateCalendar.tsx
+diff --git a/frontend/src/components/dashboard/settings/LocationSettings.tsx b/apps/web/src/components/dashboard/settings/LocationSettings.tsx
+similarity index 100%
+rename from frontend/src/components/dashboard/settings/LocationSettings.tsx
+rename to apps/web/src/components/dashboard/settings/LocationSettings.tsx
+diff --git a/frontend/src/hooks/useTheme.ts b/apps/web/src/hooks/useTheme.ts
+similarity index 100%
+rename from frontend/src/hooks/useTheme.ts
+rename to apps/web/src/hooks/useTheme.ts
+diff --git a/frontend/src/index.css b/apps/web/src/index.css
+similarity index 100%
+rename from frontend/src/index.css
+rename to apps/web/src/index.css
+diff --git a/frontend/src/lib/utils.ts b/apps/web/src/lib/utils.ts
+similarity index 100%
+rename from frontend/src/lib/utils.ts
+rename to apps/web/src/lib/utils.ts
+diff --git a/frontend/src/main.tsx b/apps/web/src/main.tsx
+similarity index 100%
+rename from frontend/src/main.tsx
+rename to apps/web/src/main.tsx
+diff --git a/frontend/src/pages/ChangePassword.tsx b/apps/web/src/pages/ChangePassword.tsx
+similarity index 100%
+rename from frontend/src/pages/ChangePassword.tsx
+rename to apps/web/src/pages/ChangePassword.tsx
+diff --git a/frontend/src/pages/Dashboard.tsx b/apps/web/src/pages/Dashboard.tsx
+similarity index 100%
+rename from frontend/src/pages/Dashboard.tsx
+rename to apps/web/src/pages/Dashboard.tsx
+diff --git a/frontend/src/pages/ForgotPassword.tsx b/apps/web/src/pages/ForgotPassword.tsx
+similarity index 100%
+rename from frontend/src/pages/ForgotPassword.tsx
+rename to apps/web/src/pages/ForgotPassword.tsx
+diff --git a/frontend/src/pages/Home.tsx b/apps/web/src/pages/Home.tsx
+similarity index 100%
+rename from frontend/src/pages/Home.tsx
+rename to apps/web/src/pages/Home.tsx
+diff --git a/frontend/src/pages/Kiosk.tsx b/apps/web/src/pages/Kiosk.tsx
+similarity index 100%
+rename from frontend/src/pages/Kiosk.tsx
+rename to apps/web/src/pages/Kiosk.tsx
+diff --git a/frontend/src/pages/Login.tsx b/apps/web/src/pages/Login.tsx
+similarity index 100%
+rename from frontend/src/pages/Login.tsx
+rename to apps/web/src/pages/Login.tsx
+diff --git a/frontend/src/pages/ResetPassword.tsx b/apps/web/src/pages/ResetPassword.tsx
+similarity index 100%
+rename from frontend/src/pages/ResetPassword.tsx
+rename to apps/web/src/pages/ResetPassword.tsx
+diff --git a/frontend/src/pages/dashboard/AnalyticsPage.tsx b/apps/web/src/pages/dashboard/AnalyticsPage.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/AnalyticsPage.tsx
+rename to apps/web/src/pages/dashboard/AnalyticsPage.tsx
+diff --git a/frontend/src/pages/dashboard/EmailFailuresPage.tsx b/apps/web/src/pages/dashboard/EmailFailuresPage.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/EmailFailuresPage.tsx
+rename to apps/web/src/pages/dashboard/EmailFailuresPage.tsx
+diff --git a/frontend/src/pages/dashboard/MyRecordsPage.tsx b/apps/web/src/pages/dashboard/MyRecordsPage.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/MyRecordsPage.tsx
+rename to apps/web/src/pages/dashboard/MyRecordsPage.tsx
+diff --git a/frontend/src/pages/dashboard/MyRequestsPage.tsx b/apps/web/src/pages/dashboard/MyRequestsPage.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/MyRequestsPage.tsx
+rename to apps/web/src/pages/dashboard/MyRequestsPage.tsx
+diff --git a/frontend/src/pages/dashboard/OverviewPage.tsx b/apps/web/src/pages/dashboard/OverviewPage.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/OverviewPage.tsx
+rename to apps/web/src/pages/dashboard/OverviewPage.tsx
+diff --git a/frontend/src/pages/dashboard/PendingPage.tsx b/apps/web/src/pages/dashboard/PendingPage.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/PendingPage.tsx
+rename to apps/web/src/pages/dashboard/PendingPage.tsx
+diff --git a/frontend/src/pages/dashboard/PermissionsPage.tsx b/apps/web/src/pages/dashboard/PermissionsPage.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/PermissionsPage.tsx
+rename to apps/web/src/pages/dashboard/PermissionsPage.tsx
+diff --git a/frontend/src/pages/dashboard/SettingsPage.tsx b/apps/web/src/pages/dashboard/SettingsPage.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/SettingsPage.tsx
+rename to apps/web/src/pages/dashboard/SettingsPage.tsx
+diff --git a/frontend/src/pages/dashboard/reports/ClosingTab.tsx b/apps/web/src/pages/dashboard/reports/ClosingTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/reports/ClosingTab.tsx
+rename to apps/web/src/pages/dashboard/reports/ClosingTab.tsx
+diff --git a/frontend/src/pages/dashboard/reports/ComplianceTab.tsx b/apps/web/src/pages/dashboard/reports/ComplianceTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/reports/ComplianceTab.tsx
+rename to apps/web/src/pages/dashboard/reports/ComplianceTab.tsx
+diff --git a/frontend/src/pages/dashboard/reports/DailyReportsTab.tsx b/apps/web/src/pages/dashboard/reports/DailyReportsTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/reports/DailyReportsTab.tsx
+rename to apps/web/src/pages/dashboard/reports/DailyReportsTab.tsx
+diff --git a/frontend/src/pages/dashboard/reports/IndicatorsTab.tsx b/apps/web/src/pages/dashboard/reports/IndicatorsTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/reports/IndicatorsTab.tsx
+rename to apps/web/src/pages/dashboard/reports/IndicatorsTab.tsx
+diff --git a/frontend/src/pages/dashboard/reports/ReportsLayout.tsx b/apps/web/src/pages/dashboard/reports/ReportsLayout.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/reports/ReportsLayout.tsx
+rename to apps/web/src/pages/dashboard/reports/ReportsLayout.tsx
+diff --git a/frontend/src/pages/dashboard/reports/RequestsTab.tsx b/apps/web/src/pages/dashboard/reports/RequestsTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/reports/RequestsTab.tsx
+rename to apps/web/src/pages/dashboard/reports/RequestsTab.tsx
+diff --git a/frontend/src/pages/dashboard/reports/TimesheetTab.tsx b/apps/web/src/pages/dashboard/reports/TimesheetTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/reports/TimesheetTab.tsx
+rename to apps/web/src/pages/dashboard/reports/TimesheetTab.tsx
+diff --git a/frontend/src/pages/dashboard/reports/reportsHelpers.tsx b/apps/web/src/pages/dashboard/reports/reportsHelpers.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/reports/reportsHelpers.tsx
+rename to apps/web/src/pages/dashboard/reports/reportsHelpers.tsx
+diff --git a/frontend/src/pages/dashboard/team/BiometricsTab.tsx b/apps/web/src/pages/dashboard/team/BiometricsTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/team/BiometricsTab.tsx
+rename to apps/web/src/pages/dashboard/team/BiometricsTab.tsx
+diff --git a/frontend/src/pages/dashboard/team/DepartmentsTab.tsx b/apps/web/src/pages/dashboard/team/DepartmentsTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/team/DepartmentsTab.tsx
+rename to apps/web/src/pages/dashboard/team/DepartmentsTab.tsx
+diff --git a/frontend/src/pages/dashboard/team/EmployeeFormModal.tsx b/apps/web/src/pages/dashboard/team/EmployeeFormModal.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/team/EmployeeFormModal.tsx
+rename to apps/web/src/pages/dashboard/team/EmployeeFormModal.tsx
+diff --git a/frontend/src/pages/dashboard/team/EmployeesTab.tsx b/apps/web/src/pages/dashboard/team/EmployeesTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/team/EmployeesTab.tsx
+rename to apps/web/src/pages/dashboard/team/EmployeesTab.tsx
+diff --git a/frontend/src/pages/dashboard/team/SchedulesTab.tsx b/apps/web/src/pages/dashboard/team/SchedulesTab.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/team/SchedulesTab.tsx
+rename to apps/web/src/pages/dashboard/team/SchedulesTab.tsx
+diff --git a/frontend/src/pages/dashboard/team/TeamLayout.tsx b/apps/web/src/pages/dashboard/team/TeamLayout.tsx
+similarity index 100%
+rename from frontend/src/pages/dashboard/team/TeamLayout.tsx
+rename to apps/web/src/pages/dashboard/team/TeamLayout.tsx
+diff --git a/frontend/src/pages/platform/PlatformCompanies.tsx b/apps/web/src/pages/platform/PlatformCompanies.tsx
+similarity index 100%
+rename from frontend/src/pages/platform/PlatformCompanies.tsx
+rename to apps/web/src/pages/platform/PlatformCompanies.tsx
+diff --git a/frontend/src/pages/platform/PlatformDashboard.tsx b/apps/web/src/pages/platform/PlatformDashboard.tsx
+similarity index 100%
+rename from frontend/src/pages/platform/PlatformDashboard.tsx
+rename to apps/web/src/pages/platform/PlatformDashboard.tsx
+diff --git a/frontend/src/pages/platform/PlatformLogs.tsx b/apps/web/src/pages/platform/PlatformLogs.tsx
+similarity index 100%
+rename from frontend/src/pages/platform/PlatformLogs.tsx
+rename to apps/web/src/pages/platform/PlatformLogs.tsx
+diff --git a/frontend/src/services/authApi.ts b/apps/web/src/services/authApi.ts
+similarity index 100%
+rename from frontend/src/services/authApi.ts
+rename to apps/web/src/services/authApi.ts
+diff --git a/frontend/src/services/cnpjApi.ts b/apps/web/src/services/cnpjApi.ts
+similarity index 100%
+rename from frontend/src/services/cnpjApi.ts
+rename to apps/web/src/services/cnpjApi.ts
+diff --git a/frontend/src/services/companyApi.ts b/apps/web/src/services/companyApi.ts
+similarity index 100%
+rename from frontend/src/services/companyApi.ts
+rename to apps/web/src/services/companyApi.ts
+diff --git a/frontend/src/services/departmentsApi.ts b/apps/web/src/services/departmentsApi.ts
+similarity index 100%
+rename from frontend/src/services/departmentsApi.ts
+rename to apps/web/src/services/departmentsApi.ts
+diff --git a/frontend/src/services/holidaysApi.ts b/apps/web/src/services/holidaysApi.ts
+similarity index 100%
+rename from frontend/src/services/holidaysApi.ts
+rename to apps/web/src/services/holidaysApi.ts
+diff --git a/frontend/src/services/http.ts b/apps/web/src/services/http.ts
+similarity index 100%
+rename from frontend/src/services/http.ts
+rename to apps/web/src/services/http.ts
+diff --git a/frontend/src/services/platformApi.ts b/apps/web/src/services/platformApi.ts
+similarity index 100%
+rename from frontend/src/services/platformApi.ts
+rename to apps/web/src/services/platformApi.ts
+diff --git a/frontend/src/services/recordsApi.ts b/apps/web/src/services/recordsApi.ts
+similarity index 100%
+rename from frontend/src/services/recordsApi.ts
+rename to apps/web/src/services/recordsApi.ts
+diff --git a/frontend/src/services/reportsApi.ts b/apps/web/src/services/reportsApi.ts
+similarity index 100%
+rename from frontend/src/services/reportsApi.ts
+rename to apps/web/src/services/reportsApi.ts
+diff --git a/frontend/src/services/requestsApi.ts b/apps/web/src/services/requestsApi.ts
+similarity index 100%
+rename from frontend/src/services/requestsApi.ts
+rename to apps/web/src/services/requestsApi.ts
+diff --git a/frontend/src/services/usersApi.ts b/apps/web/src/services/usersApi.ts
+similarity index 100%
+rename from frontend/src/services/usersApi.ts
+rename to apps/web/src/services/usersApi.ts
+diff --git a/frontend/src/stores/authStore.ts b/apps/web/src/stores/authStore.ts
+similarity index 100%
+rename from frontend/src/stores/authStore.ts
+rename to apps/web/src/stores/authStore.ts
+diff --git a/frontend/src/stores/platformAuthStore.ts b/apps/web/src/stores/platformAuthStore.ts
+similarity index 100%
+rename from frontend/src/stores/platformAuthStore.ts
+rename to apps/web/src/stores/platformAuthStore.ts
+diff --git a/frontend/src/vite-env.d.ts b/apps/web/src/vite-env.d.ts
+similarity index 100%
+rename from frontend/src/vite-env.d.ts
+rename to apps/web/src/vite-env.d.ts
+diff --git a/frontend/tailwind.config.js b/apps/web/tailwind.config.js
+similarity index 100%
+rename from frontend/tailwind.config.js
+rename to apps/web/tailwind.config.js
+diff --git a/frontend/tsconfig.json b/apps/web/tsconfig.json
+similarity index 100%
+rename from frontend/tsconfig.json
+rename to apps/web/tsconfig.json
+diff --git a/ecosystem.config.cjs b/ecosystem.config.cjs
+index ec3453b49330e915a6487043c6524bb9fccfce29..531822f896b4bd17c7f7d3c604e4ec2241122ccc 100644
+--- a/ecosystem.config.cjs
++++ b/ecosystem.config.cjs
+@@ -2,13 +2,13 @@ module.exports = {
+   apps: [
+     {
+       name: "n3xtimemulti-api",
+-      cwd: "./backend",
++      cwd: "./apps/api",
+       script: "dist/api/server.js",
+       interpreter: "node",
+       watch: false,
+       windowsHide: true,
+-      out_file: "../.pm2-n3xtime-api.out.log",
+-      error_file: "../.pm2-n3xtime-api.error.log",
++      out_file: "../../.pm2-n3xtime-api.out.log",
++      error_file: "../../.pm2-n3xtime-api.error.log",
+       merge_logs: true,
+       env: {
+         NODE_ENV: "production",
+@@ -17,13 +17,13 @@ module.exports = {
+     },
+     {
+       name: "n3xtimemulti-web",
+-      cwd: "./frontend",
++      cwd: "./apps/web",
+       script: "server.cjs",
+       interpreter: "node",
+       watch: false,
+       windowsHide: true,
+-      out_file: "../.pm2-n3xtime-web.out.log",
+-      error_file: "../.pm2-n3xtime-web.error.log",
++      out_file: "../../.pm2-n3xtime-web.out.log",
++      error_file: "../../.pm2-n3xtime-web.error.log",
+       merge_logs: true,
+       env: {
+         NODE_ENV: "production",
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..7cb26fead4a4a3789d88fec88e2f37ea37ae477d
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,23 @@
++{
++  "name": "n3xtime",
++  "private": true,
++  "version": "1.0.0",
++  "packageManager": "pnpm@11.24.0",
++  "scripts": {
++    "dev": "pnpm -r --parallel --filter @n3xtime/api --filter @n3xtime/web run dev",
++    "dev:api": "pnpm --filter @n3xtime/api dev",
++    "dev:web": "pnpm --filter @n3xtime/web dev",
++    "build": "pnpm -r run build",
++    "build:api": "pnpm --filter @n3xtime/api build",
++    "build:web": "pnpm --filter @n3xtime/web build",
++    "lint": "pnpm --filter @n3xtime/web lint",
++    "typecheck": "pnpm --filter @n3xtime/web typecheck",
++    "db:validate": "pnpm --filter @n3xtime/database db:validate",
++    "db:diff": "pnpm --filter @n3xtime/database db:diff",
++    "db:migrate:dev": "pnpm --filter @n3xtime/database db:migrate:dev",
++    "db:migrate:deploy": "pnpm --filter @n3xtime/database db:migrate:deploy",
++    "db:migrate:status": "pnpm --filter @n3xtime/database db:migrate:status",
++    "db:format": "pnpm --filter @n3xtime/database db:format",
++    "db:studio": "pnpm --filter @n3xtime/database db:studio"
++  }
++}
+diff --git a/packages/database/package.json b/packages/database/package.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..103e246c0643eacad5b3a7d7cd101aba70c89dc1
+--- /dev/null
++++ b/packages/database/package.json
+@@ -0,0 +1,23 @@
++{
++  "name": "@n3xtime/database",
++  "private": true,
++  "version": "1.0.0",
++  "type": "module",
++  "scripts": {
++    "db:validate": "prisma validate --config prisma.config.ts",
++    "db:diff": "prisma migrate diff --config prisma.config.ts --from-config-datasource --to-schema prisma/schema.prisma",
++    "db:migrate:dev": "prisma migrate dev --config prisma.config.ts",
++    "db:migrate:deploy": "prisma migrate deploy --config prisma.config.ts",
++    "db:migrate:status": "prisma migrate status --config prisma.config.ts",
++    "db:format": "prisma format --config prisma.config.ts",
++    "db:studio": "prisma studio --config prisma.config.ts"
++  },
++  "dependencies": {
++    "dotenv": "^17.2.1"
++  },
++  "devDependencies": {
++    "@types/node": "^22.15.30",
++    "prisma": "^7.10.0",
++    "typescript": "~5.8.3"
++  }
++}
+diff --git a/backend/prisma.config.ts b/packages/database/prisma.config.ts
+similarity index 65%
+rename from backend/prisma.config.ts
+rename to packages/database/prisma.config.ts
+index 178dc884c636973fa380838828a1cb2b2f3725b0..af582cb7a528c84168e862658c9d2ee4a87277d7 100644
+--- a/backend/prisma.config.ts
++++ b/packages/database/prisma.config.ts
+@@ -1,6 +1,15 @@
+-import 'dotenv/config';
++import { config as loadEnv } from 'dotenv';
++import { dirname, resolve } from 'node:path';
++import { fileURLToPath } from 'node:url';
+ import { defineConfig } from 'prisma/config';
+ 
++const packageDir = dirname(fileURLToPath(import.meta.url));
++
++// Preserve the current environment location after moving Prisma out of the API.
++// A root .env is loaded as a fallback for future workspace-wide configuration.
++loadEnv({ path: resolve(packageDir, '../../apps/api/.env') });
++loadEnv({ path: resolve(packageDir, '../../.env') });
++
+ const requiredDatabaseVariable = (name: 'DB_HOST' | 'DB_NAME' | 'DB_USER' | 'DB_PASS') => {
+   const value = process.env[name]?.trim();
+   if (!value) throw new Error(`${name} nao configurado para o Prisma.`);
+diff --git a/backend/prisma/migrations/20260828120000_init/migration.sql b/packages/database/prisma/migrations/20260828120000_init/migration.sql
+similarity index 100%
+rename from backend/prisma/migrations/20260828120000_init/migration.sql
+rename to packages/database/prisma/migrations/20260828120000_init/migration.sql
+diff --git a/backend/prisma/migrations/20260828121000_add_request_absence_times/migration.sql b/packages/database/prisma/migrations/20260828121000_add_request_absence_times/migration.sql
+similarity index 100%
+rename from backend/prisma/migrations/20260828121000_add_request_absence_times/migration.sql
+rename to packages/database/prisma/migrations/20260828121000_add_request_absence_times/migration.sql
+diff --git a/backend/prisma/migrations/migration_lock.toml b/packages/database/prisma/migrations/migration_lock.toml
+similarity index 100%
+rename from backend/prisma/migrations/migration_lock.toml
+rename to packages/database/prisma/migrations/migration_lock.toml
+diff --git a/backend/prisma/schema.prisma b/packages/database/prisma/schema.prisma
+similarity index 100%
+rename from backend/prisma/schema.prisma
+rename to packages/database/prisma/schema.prisma
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..3ff5faaaf5f139c707e338e7e89e51606e9e0ace
+--- /dev/null
++++ b/pnpm-workspace.yaml
+@@ -0,0 +1,3 @@
++packages:
++  - "apps/*"
++  - "packages/*"
+diff --git a/package-lock.json b/package-lock.json
+deleted file mode 100644
+index 949cf5143aa27ccb11a002963f50e150d6145be3..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+diff --git a/backend/package-lock.json b/backend/package-lock.json
+deleted file mode 100644
+index 2de86afdf1ca69158a6566feea3f446b67afb120..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+diff --git a/frontend/package-lock.json b/frontend/package-lock.json
+deleted file mode 100644
+index 77e07c7983b37dea766e9682dee27f1ea438fd30..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+

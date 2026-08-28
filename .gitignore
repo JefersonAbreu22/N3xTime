@@ -43,8 +43,8 @@ pids/
 *.seed
 
 # Runtime uploads and generated files
-backend/api/uploads/
-backend/uploads/
+apps/api/api/uploads/
+apps/api/uploads/
 uploads/
 *.tmp
 *.temp
@@ -58,8 +58,8 @@ uploads/
 *.backup
 *.sqlite
 *.sqlite3
-backend/dump_*.sql
-!backend/prisma/migrations/**/*.sql
+apps/api/dump_*.sql
+!packages/database/prisma/migrations/**/*.sql
 
 # Coverage / test output
 coverage/

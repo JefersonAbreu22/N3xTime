@@ -2,13 +2,13 @@ module.exports = {
   apps: [
     {
       name: "n3xtimemulti-api",
-      cwd: "./backend",
+      cwd: "./apps/api",
       script: "dist/api/server.js",
       interpreter: "node",
       watch: false,
       windowsHide: true,
-      out_file: "../.pm2-n3xtime-api.out.log",
-      error_file: "../.pm2-n3xtime-api.error.log",
+      out_file: "../../.pm2-n3xtime-api.out.log",
+      error_file: "../../.pm2-n3xtime-api.error.log",
       merge_logs: true,
       env: {
         NODE_ENV: "production",
@@ -17,13 +17,13 @@ module.exports = {
     },
     {
       name: "n3xtimemulti-web",
-      cwd: "./frontend",
+      cwd: "./apps/web",
       script: "server.cjs",
       interpreter: "node",
       watch: false,
       windowsHide: true,
-      out_file: "../.pm2-n3xtime-web.out.log",
-      error_file: "../.pm2-n3xtime-web.error.log",
+      out_file: "../../.pm2-n3xtime-web.out.log",
+      error_file: "../../.pm2-n3xtime-web.error.log",
       merge_logs: true,
       env: {
         NODE_ENV: "production",
