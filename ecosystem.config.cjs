@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "pontobispo-api",
+      name: "n3xtimemulti-api",
       cwd: "./backend",
       script: "dist/api/server.js",
       interpreter: "node",
@@ -12,11 +12,11 @@ module.exports = {
       merge_logs: true,
       env: {
         NODE_ENV: "production",
-        PORT: 3989
+        PORT: 4989
       }
     },
     {
-      name: "pontobispo-web",
+      name: "n3xtimemulti-web",
       cwd: "./frontend",
       script: "server.cjs",
       interpreter: "node",
@@ -28,7 +28,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         HOST: "0.0.0.0",
-        PORT: 3979
+        PORT: 4979
       }
     }
   ]
