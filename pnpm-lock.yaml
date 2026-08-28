@@ -55,6 +55,9 @@ importers:
       tsx:
         specifier: ^4.20.3
         version: 4.23.12
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
       '@types/bcrypt':
         specifier: ^5.0.2

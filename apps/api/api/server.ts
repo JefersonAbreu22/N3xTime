@@ -27,7 +27,8 @@ if (envPath) {
 /**
  * start server with port
  */
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT || 3001);
+const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0');
 
 const startServer = async () => {
   try {
@@ -35,8 +36,8 @@ const startServer = async () => {
     const remotePhotoRetentionJob = startRemotePhotoRetentionJob();
 
     const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
-      const startedServer = app.listen(PORT, () => {
-        console.log(`Server ready on port ${PORT}`);
+      const startedServer = app.listen(PORT, HOST, () => {
+        console.log(`Server ready at http://${HOST}:${PORT}`);
         resolve(startedServer);
       });
 

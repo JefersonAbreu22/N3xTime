@@ -19,8 +19,8 @@ import { runWithTenant, runWithoutTenant } from '../tenancy/tenantContext.js';
 import { fingerprintKioskKey } from '../utils/kioskKey.js';
 import { AuditService } from '../services/AuditService.js';
 import { allLeadershipPermissions, getEffectiveLeadershipPermissions, getManagedUserIds, isManagerResponsibleForUser } from '../utils/leadership.js';
+import { getJwtSecret } from '../config/security.js';
 
-const getJwtSecret = () => process.env.JWT_SECRET || 'supersecret';
 const getKioskTokenTtl = () => process.env.KIOSK_TOKEN_TTL || '7d';
 const getPasswordFingerprint = (passwordHash: string) => crypto.createHash('sha256').update(passwordHash).digest('hex');
 const getPasswordResetBaseUrl = () => {
@@ -336,7 +336,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     if (!parsed.success) return res.status(400).json({ success: false, error: PASSWORD_POLICY_MESSAGE });
     let payload: { sub?: string; companyId?: number; purpose?: string; passwordFingerprint?: string };
     try {
-      payload = jwt.verify(parsed.data.token, getJwtSecret(), { issuer: 'n3xtime-password-reset' }) as typeof payload;
+      payload = jwt.verify(parsed.data.token, getJwtSecret(), { issuer: 'n3xtime-password-reset', algorithms: ['HS256'] }) as typeof payload;
     } catch {
       return res.status(400).json({ success: false, error: 'Este link é inválido ou expirou. Solicite uma nova redefinição.' });
     }

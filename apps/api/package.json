@@ -12,7 +12,9 @@
     "start:prod": "node dist/api/server.js",
     "start:pm2": "node dist/api/server.js",
     "seed:admin": "tsx api/scripts/seedAdmin.ts",
-    "seed:platform-admin": "tsx api/scripts/seedPlatformAdmin.ts"
+    "seed:platform-admin": "tsx api/scripts/seedPlatformAdmin.ts",
+    "admin:create": "tsx api/scripts/seedPlatformAdmin.ts",
+    "admin:create:prod": "node dist/api/scripts/seedPlatformAdmin.js"
   },
   "dependencies": {
     "@types/nodemailer": "^8.0.1",
@@ -29,7 +31,8 @@
     "nodemailer": "^9.0.3",
     "pm2": "^7.0.1",
     "sequelize": "^6.37.5",
-    "tsx": "^4.20.3"
+    "tsx": "^4.20.3",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",

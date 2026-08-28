@@ -23,6 +23,13 @@ import requestsRoutes from './routes/requests.js'
 import platformRoutes from './routes/platform.js'
 import fileRoutes from './routes/files.js'
 import './models/index.js'
+import { assertSecurityConfiguration, corsOptions } from './config/security.js'
+import {
+  apiRateLimiter,
+  noStoreMiddleware,
+  requestIdMiddleware,
+  createSecurityHeaders,
+} from './middlewares/security.js'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -41,9 +48,24 @@ if (envPath) {
 }
 
 const app: express.Application = express()
-app.use(cors())
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+
+assertSecurityConfiguration()
+
+// Trust forwarding headers only when the immediate proxy is on the same host.
+// This works with the local Apache/XAMPP reverse proxy without trusting arbitrary X-Forwarded-For values.
+app.set('trust proxy', 'loopback')
+app.set('query parser', 'simple')
+app.disable('x-powered-by')
+
+app.use(requestIdMiddleware)
+app.use(createSecurityHeaders())
+app.use(noStoreMiddleware)
+app.use(cors(corsOptions))
+app.use(apiRateLimiter)
+
+// JSON requests in this API are small. File uploads continue to use Multer and keep their own limits.
+app.use(express.json({ limit: '2mb', strict: true }))
+app.use(express.urlencoded({ extended: false, limit: '2mb', parameterLimit: 100 }))
 
 /**
  * API Routes
@@ -75,22 +97,54 @@ app.use(
 /**
  * error handler middleware
  */
-app.use((error: Error & { statusCode?: number; code?: string }, req: Request, res: Response, _next: NextFunction) => {
-  if (error.code === 'LIMIT_FILE_SIZE') {
+app.use((error: Error & { status?: number; statusCode?: number; code?: string; type?: string }, req: Request, res: Response, _next: NextFunction) => {
+  if (error.code === 'CORS_ORIGIN_DENIED') {
+    res.status(403).json({
+      success: false,
+      error: 'Origem não autorizada.',
+    })
+    return
+  }
+
+  if (error.type === 'entity.parse.failed') {
     res.status(400).json({
+      success: false,
+      error: 'JSON inválido.',
+    })
+    return
+  }
+
+  if (error.type === 'entity.too.large') {
+    res.status(413).json({
+      success: false,
+      error: 'Payload excede o limite permitido.',
+    })
+    return
+  }
+
+  if (error.code === 'LIMIT_FILE_SIZE') {
+    res.status(413).json({
       success: false,
       error: 'O anexo excede o limite de 10MB.',
     })
     return
   }
 
-  if (error.statusCode) {
-    res.status(error.statusCode).json({
+  const statusCode = error.statusCode ?? error.status
+  if (statusCode && statusCode >= 400 && statusCode < 500) {
+    res.status(statusCode).json({
       success: false,
       error: error.message,
     })
     return
   }
+
+  console.error('Unhandled API error', {
+    requestId: res.getHeader('X-Request-Id'),
+    method: req.method,
+    path: req.originalUrl,
+    error,
+  })
 
   res.status(500).json({
     success: false,

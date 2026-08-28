@@ -5,6 +5,7 @@ import { runWithTenant } from '../tenancy/tenantContext.js';
 import { Company } from '../models/Company.js';
 import { PlatformUser } from '../models/PlatformUser.js';
 import { User } from '../models/User.js';
+import { getJwtSecret } from '../config/security.js';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -26,15 +27,18 @@ const getKioskControl = async () => {
 };
 
 export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const token = req.headers.authorization?.split(' ')[1];
+  const authorization = req.headers.authorization;
+  const bearerMatch = authorization?.match(/^Bearer\s+(\S+)$/i);
+  const token = bearerMatch?.[1];
 
-  if (!token) {
+  if (!token || token.length > 8192) {
     return res.status(401).json({ success: false, error: 'Token não fornecido.' });
   }
 
   try {
-    const secret = process.env.JWT_SECRET || 'supersecret';
-    const decoded = jwt.verify(token, secret) as { id: number; role: string; scope?: 'tenant' | 'kiosk' | 'platform'; companyId?: number; kioskVersion?: number; impersonatedBy?: number };
+    const decoded = jwt.verify(token, getJwtSecret(), {
+      algorithms: ['HS256'],
+    }) as { id: number; role: string; scope?: 'tenant' | 'kiosk' | 'platform'; companyId?: number; kioskVersion?: number; impersonatedBy?: number };
     if (decoded.role === 'platform_admin' && decoded.scope === 'platform') {
       const platformUser = await PlatformUser.findOne({ where: { id: decoded.id, status: 'active' } });
       if (!platformUser) {

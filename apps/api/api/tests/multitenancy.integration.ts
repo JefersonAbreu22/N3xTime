@@ -33,9 +33,10 @@ process.env.NODE_ENV = 'test';
 process.env.DISABLE_TIME_RECORD_EMAIL = 'true';
 
 const execFileAsync = promisify(execFile);
-const prismaCli = path.resolve(process.cwd(), 'node_modules/prisma/build/index.js');
+const databasePackageDir = path.resolve(process.cwd(), '../../packages/database');
+const prismaCli = path.resolve(databasePackageDir, 'node_modules/prisma/build/index.js');
 await execFileAsync(process.execPath, [prismaCli, 'migrate', 'deploy', '--config', 'prisma.config.ts'], {
-  cwd: process.cwd(),
+  cwd: databasePackageDir,
   env: process.env,
 });
 await execFileAsync(process.execPath, [
@@ -49,7 +50,7 @@ await execFileAsync(process.execPath, [
   'prisma/schema.prisma',
   '--exit-code',
 ], {
-  cwd: process.cwd(),
+  cwd: databasePackageDir,
   env: process.env,
 });
 
