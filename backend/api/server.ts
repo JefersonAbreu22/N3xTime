@@ -6,7 +6,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import app from './app.js';
-import { syncDatabase } from './models/index.js';
+import { connectDatabase } from './models/index.js';
 import { startRemotePhotoRetentionJob } from './services/RemotePhotoRetentionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,7 +31,7 @@ const PORT = process.env.PORT || 3001;
 
 const startServer = async () => {
   try {
-    await syncDatabase();
+    await connectDatabase();
     const remotePhotoRetentionJob = startRemotePhotoRetentionJob();
 
     const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {

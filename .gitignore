@@ -59,6 +59,7 @@ uploads/
 *.sqlite
 *.sqlite3
 backend/dump_*.sql
+!backend/prisma/migrations/**/*.sql
 
 # Coverage / test output
 coverage/

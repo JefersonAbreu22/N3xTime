@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
-import { syncDatabase } from '../models/index.js';
+import { connectDatabase } from '../models/index.js';
 import { User } from '../models/User.js';
 import { Company } from '../models/Company.js';
 import { CompanyProfile } from '../models/CompanyProfile.js';
@@ -11,7 +11,7 @@ import { fingerprintKioskKey } from '../utils/kioskKey.js';
 dotenv.config();
 
 const run = async () => {
-  await syncDatabase();
+  await connectDatabase();
 
   const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.ADMIN_PASSWORD;

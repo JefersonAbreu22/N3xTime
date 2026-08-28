@@ -1,0 +1,582 @@
+datasource db {
+  provider = "mysql"
+}
+
+enum ActiveInactiveStatus {
+  active
+  inactive
+}
+
+enum AttendanceStatus {
+  absent
+  in_progress
+  complete
+  holiday
+  day_off
+  justified
+}
+
+enum BiometricEventType {
+  enrollment
+  verification_success
+  verification_failure
+  pin_fallback
+  reset
+}
+
+enum CompanyStatus {
+  active
+  inactive
+  suspended
+}
+
+enum DeliveryStatus {
+  sent
+  failed
+}
+
+enum LocationStatus {
+  approved
+  out_of_area
+}
+
+enum MonthlyClosingStatus {
+  open
+  closed
+}
+
+enum RecordMethod {
+  facial
+  pin
+  manual
+  web
+}
+
+enum RecordType {
+  entry
+  lunch_start
+  lunch_end
+  exit
+  auto
+}
+
+enum RequestStatus {
+  pending
+  approved
+  rejected
+}
+
+enum RequestType {
+  time_adjustment
+  medical_certificate
+  declaration
+  vacation
+  day_off
+  external_work
+}
+
+enum TimeRecordStatus {
+  valid
+  pending_approval
+  rejected
+  adjusted
+}
+
+enum TrustLevel {
+  high
+  medium
+  low
+}
+
+enum UserRole {
+  admin
+  manager
+  employee
+}
+
+enum WorkScheduleType {
+  fixed
+  x12_36   @map("12x36")
+  rotative
+  custom
+}
+
+enum WorkType {
+  presential
+  hybrid
+  remote
+}
+
+model Company {
+  id                           Int                          @id @default(autoincrement())
+  legal_name                   String                       @db.VarChar(255)
+  trade_name                   String?                      @db.VarChar(255)
+  slug                         String                       @unique(map: "slug") @db.VarChar(80)
+  cnpj                         String?                      @unique(map: "cnpj") @db.VarChar(18)
+  status                       CompanyStatus                @default(active)
+  kiosk_access_key_hash        String?                      @db.VarChar(255)
+  kiosk_access_key_fingerprint String?                      @unique(map: "kiosk_access_key_fingerprint") @db.VarChar(64)
+  created_at                   DateTime                     @db.DateTime(0)
+  updated_at                   DateTime                     @db.DateTime(0)
+  attendance_summaries         AttendanceSummary[]
+  audit_logs                   AuditLog[]
+  biometric_events             BiometricEvent[]
+  biometric_samples            BiometricSample[]
+  company_profile              CompanyProfile?
+  departments                  Department[]
+  department_hierarchy_levels  DepartmentHierarchyLevel[]
+  department_leaders           DepartmentLeaderAssignment[]
+  email_delivery_failures      EmailDeliveryFailure[]
+  email_delivery_logs          EmailDeliveryLog[]
+  employee_requests            EmployeeRequest[]
+  holidays                     Holiday[]
+  kiosk_control                KioskControl?
+  monthly_closings             MonthlyClosing[]
+  platform_audit_logs          PlatformAuditLog[]
+  remote_photo_evidences       RemotePhotoEvidence[]
+  time_records                 TimeRecord[]
+  users                        User[]
+  work_schedules               WorkSchedule[]
+
+  @@map("companies")
+}
+
+model CompanyProfile {
+  id                      Int      @id @default(autoincrement())
+  legal_name              String   @default("Empresa não configurada") @db.VarChar(255)
+  trade_name              String?  @db.VarChar(255)
+  cnpj                    String?  @db.VarChar(18)
+  email                   String?  @db.VarChar(255)
+  phone                   String?  @db.VarChar(30)
+  address_line            String?  @db.VarChar(255)
+  city                    String?  @db.VarChar(120)
+  state                   String?  @db.VarChar(80)
+  zip_code                String?  @db.VarChar(20)
+  night_shift_start       String   @default("22:00") @db.VarChar(5)
+  night_shift_end         String   @default("05:00") @db.VarChar(5)
+  late_tolerance_minutes  Int      @default(5)
+  lunch_tolerance_minutes Int      @default(10)
+  latitude                Decimal? @db.Decimal(10, 8)
+  longitude               Decimal? @db.Decimal(11, 8)
+  allowed_radius          Int?     @default(200)
+  block_outside_area      Boolean  @default(false)
+  created_at              DateTime @db.DateTime(0)
+  company_id              Int      @unique(map: "company_profiles_company_id")
+  company                 Company  @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "company_profiles_ibfk_1")
+
+  @@map("company_profiles")
+}
+
+model Department {
+  id                 Int                          @id @default(autoincrement())
+  name               String                       @db.VarChar(100)
+  created_at         DateTime                     @db.DateTime(0)
+  company_id         Int
+  company            Company                      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "departments_ibfk_1")
+  users              User[]
+  hierarchy_levels   DepartmentHierarchyLevel[]
+  leader_assignments DepartmentLeaderAssignment[]
+
+  @@index([company_id], map: "departments_company_id")
+  @@map("departments")
+}
+
+model WorkSchedule {
+  id              Int              @id @default(autoincrement())
+  name            String           @db.VarChar(100)
+  type            WorkScheduleType
+  entry_time      DateTime?        @db.Time(0)
+  exit_time       DateTime?        @db.Time(0)
+  lunch_duration  Int?
+  flexible_lunch  Boolean          @default(true)
+  work_days       Json?
+  custom_workload Json?
+  created_at      DateTime         @db.DateTime(0)
+  company_id      Int
+  company         Company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "work_schedules_ibfk_1")
+  users           User[]
+
+  @@index([company_id], map: "work_schedules_company_id")
+  @@map("work_schedules")
+}
+
+model User {
+  id                            Int                          @id @default(autoincrement())
+  name                          String                       @db.VarChar(255)
+  cpf                           String                       @db.VarChar(14)
+  registration_number           String                       @db.VarChar(50)
+  email                         String                       @unique(map: "users_email_unique") @db.VarChar(255)
+  password_hash                 String                       @db.VarChar(255)
+  role                          UserRole
+  work_type                     WorkType
+  department_id                 Int?
+  manager_id                    Int?
+  schedule_id                   Int?
+  pin_code                      String?                      @db.VarChar(255)
+  facial_descriptor             String?                      @db.LongText
+  status                        ActiveInactiveStatus?        @default(active)
+  hire_date                     DateTime?                    @db.Date
+  remote_clock_in_enabled       Boolean                      @default(false)
+  remote_clock_in_justification String?                      @db.Text
+  must_change_password          Boolean                      @default(false)
+  requires_time_tracking        Boolean                      @default(true)
+  created_at                    DateTime                     @db.DateTime(0)
+  company_id                    Int
+  company                       Company                      @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "users_ibfk_4")
+  department                    Department?                  @relation(fields: [department_id], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "users_ibfk_1")
+  manager                       User?                        @relation("UserManager", fields: [manager_id], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "users_ibfk_2")
+  managed_users                 User[]                       @relation("UserManager")
+  schedule                      WorkSchedule?                @relation(fields: [schedule_id], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "users_ibfk_3")
+  attendance_summaries          AttendanceSummary[]
+  biometric_events              BiometricEvent[]             @relation("BiometricEventUser")
+  triggered_biometric_events    BiometricEvent[]             @relation("BiometricEventTriggeredBy")
+  biometric_samples             BiometricSample[]
+  leader_assignments            DepartmentLeaderAssignment[]
+  email_delivery_failures       EmailDeliveryFailure[]
+  email_delivery_logs           EmailDeliveryLog[]
+  employee_requests             EmployeeRequest[]            @relation("EmployeeRequestUser")
+  reviewed_employee_requests    EmployeeRequest[]            @relation("EmployeeRequestReviewer")
+  target_employee_requests      EmployeeRequest[]            @relation("EmployeeRequestTargetManager")
+  closed_months                 MonthlyClosing[]             @relation("MonthlyClosingClosedBy")
+  reopened_months               MonthlyClosing[]             @relation("MonthlyClosingReopenedBy")
+  time_records                  TimeRecord[]                 @relation("TimeRecordUser")
+  reviewed_time_records         TimeRecord[]                 @relation("TimeRecordReviewer")
+
+  @@unique([company_id, cpf], map: "users_company_id_cpf")
+  @@unique([company_id, registration_number], map: "users_company_id_registration_number")
+  @@index([company_id], map: "users_company_id")
+  @@map("users")
+}
+
+model AttendanceSummary {
+  id                     Int              @id @default(autoincrement())
+  user_id                Int
+  date                   DateTime         @db.Date
+  worked_minutes         Int              @default(0)
+  required_minutes       Int              @default(0)
+  late_minutes           Int              @default(0)
+  overtime_minutes       Int              @default(0)
+  deficit_minutes        Int              @default(0)
+  bank_balance_minutes   Int              @default(0)
+  night_minutes          Int              @default(0)
+  holiday_worked_minutes Int              @default(0)
+  status                 AttendanceStatus @default(absent)
+  has_complete_journey   Boolean          @default(false)
+  is_holiday             Boolean          @default(false)
+  is_justified_absence   Boolean          @default(false)
+  record_count           Int              @default(0)
+  first_record_time      DateTime?        @db.DateTime(0)
+  last_record_time       DateTime?        @db.DateTime(0)
+  created_at             DateTime         @db.DateTime(0)
+  updated_at             DateTime         @db.DateTime(0)
+  company_id             Int
+  user                   User             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "attendance_summaries_ibfk_1")
+  company                Company          @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "attendance_summaries_ibfk_2")
+
+  @@unique([user_id, date], map: "attendance_summaries_user_id_date")
+  @@index([company_id], map: "attendance_summaries_company_id")
+  @@map("attendance_summaries")
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  user_id     Int?
+  action      String   @db.VarChar(255)
+  entity_name String   @db.VarChar(255)
+  entity_id   Int?
+  old_value   String?  @db.Text
+  new_value   String?  @db.Text
+  ip_address  String?  @db.VarChar(255)
+  device_info String?  @db.Text
+  created_at  DateTime @db.DateTime(0)
+  company_id  Int
+  company     Company  @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "audit_logs_ibfk_1")
+
+  @@index([company_id], map: "audit_logs_company_id")
+  @@map("audit_logs")
+}
+
+model BiometricEvent {
+  id                Int                @id @default(autoincrement())
+  user_id           Int?
+  event_type        BiometricEventType
+  method            RecordMethod
+  success           Boolean            @default(true)
+  match_score       Decimal?           @db.Decimal(8, 4)
+  threshold         Decimal?           @db.Decimal(8, 4)
+  reason            String?            @db.VarChar(255)
+  triggered_by      Int?
+  device_info       String?            @db.Text
+  metadata          String?            @db.LongText
+  created_at        DateTime           @db.DateTime(0)
+  company_id        Int
+  user              User?              @relation("BiometricEventUser", fields: [user_id], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "biometric_events_ibfk_1")
+  triggered_by_user User?              @relation("BiometricEventTriggeredBy", fields: [triggered_by], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "biometric_events_ibfk_2")
+  company           Company            @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "biometric_events_ibfk_3")
+
+  @@index([user_id], map: "biometric_events_user_id")
+  @@index([event_type], map: "biometric_events_event_type")
+  @@index([company_id], map: "biometric_events_company_id")
+  @@map("biometric_events")
+}
+
+model BiometricSample {
+  id            Int      @id @default(autoincrement())
+  user_id       Int
+  descriptor    String   @db.LongText
+  quality_score Decimal? @db.Decimal(5, 2)
+  sample_index  Int
+  captured_by   Int?
+  created_at    DateTime @db.DateTime(0)
+  company_id    Int
+  user          User     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "biometric_samples_ibfk_1")
+  company       Company  @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "biometric_samples_ibfk_2")
+
+  @@index([user_id], map: "biometric_samples_user_id")
+  @@index([company_id], map: "biometric_samples_company_id")
+  @@map("biometric_samples")
+}
+
+model DepartmentHierarchyLevel {
+  id                 Int                          @id @default(autoincrement())
+  department_id      Int
+  name               String                       @db.VarChar(80)
+  position           Int
+  created_at         DateTime                     @db.DateTime(0)
+  updated_at         DateTime                     @db.DateTime(0)
+  company_id         Int
+  department         Department                   @relation(fields: [department_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "department_hierarchy_levels_ibfk_1")
+  company            Company                      @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "department_hierarchy_levels_ibfk_2")
+  leader_assignments DepartmentLeaderAssignment[]
+
+  @@unique([company_id, department_id, position], map: "department_hierarchy_levels_department_position")
+  @@unique([company_id, department_id, name], map: "department_hierarchy_levels_department_name")
+  @@index([company_id], map: "department_hierarchy_levels_company_id")
+  @@map("department_hierarchy_levels")
+}
+
+model DepartmentLeaderAssignment {
+  id            Int                      @id @default(autoincrement())
+  department_id Int
+  level_id      Int
+  user_id       Int
+  permissions   Json                     @default("[\"view_team\",\"view_time_records\",\"approve_requests\",\"view_reports\"]")
+  created_at    DateTime                 @db.DateTime(0)
+  updated_at    DateTime                 @db.DateTime(0)
+  company_id    Int
+  department    Department               @relation(fields: [department_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "department_leader_assignments_ibfk_1")
+  level         DepartmentHierarchyLevel @relation(fields: [level_id], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "department_leader_assignments_ibfk_2")
+  user          User                     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "department_leader_assignments_ibfk_3")
+  company       Company                  @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "department_leader_assignments_ibfk_4")
+
+  @@unique([company_id, department_id, level_id, user_id], map: "department_leader_assignments_user_level")
+  @@index([company_id], map: "department_leader_assignments_company_id")
+  @@map("department_leader_assignments")
+}
+
+model EmailDeliveryFailure {
+  id            Int        @id @default(autoincrement())
+  record_id     Int
+  user_id       Int
+  recipient     String     @db.VarChar(255)
+  error_message String     @db.Text
+  smtp_code     String?    @db.VarChar(80)
+  attempted_at  DateTime   @db.DateTime(0)
+  created_at    DateTime   @db.DateTime(0)
+  company_id    Int
+  record        TimeRecord @relation(fields: [record_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "email_delivery_failures_ibfk_1")
+  user          User       @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "email_delivery_failures_ibfk_2")
+  company       Company    @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "email_delivery_failures_ibfk_3")
+
+  @@index([record_id], map: "email_delivery_failures_record_id")
+  @@index([user_id], map: "email_delivery_failures_user_id")
+  @@index([attempted_at], map: "email_delivery_failures_attempted_at")
+  @@index([company_id], map: "email_delivery_failures_company_id")
+  @@map("email_delivery_failures")
+}
+
+model EmailDeliveryLog {
+  id            Int            @id @default(autoincrement())
+  record_id     Int
+  user_id       Int
+  recipient     String         @db.VarChar(255)
+  status        DeliveryStatus
+  smtp_code     String?        @db.VarChar(80)
+  message_id    String?        @db.VarChar(255)
+  smtp_response String?        @db.Text
+  error_message String?        @db.Text
+  attempted_at  DateTime       @db.DateTime(0)
+  created_at    DateTime       @db.DateTime(0)
+  company_id    Int
+  record        TimeRecord     @relation(fields: [record_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "email_delivery_logs_ibfk_1")
+  user          User           @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "email_delivery_logs_ibfk_2")
+  company       Company        @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "email_delivery_logs_ibfk_3")
+
+  @@index([record_id], map: "email_delivery_logs_record_id")
+  @@index([user_id], map: "email_delivery_logs_user_id")
+  @@index([status], map: "email_delivery_logs_status")
+  @@index([attempted_at], map: "email_delivery_logs_attempted_at")
+  @@index([company_id], map: "email_delivery_logs_company_id")
+  @@map("email_delivery_logs")
+}
+
+model EmployeeRequest {
+  id                    Int           @id @default(autoincrement())
+  user_id               Int
+  reviewed_by           Int?
+  target_manager_id     Int?
+  target_department_id  Int?
+  request_type          RequestType
+  status                RequestStatus @default(pending)
+  target_date           DateTime      @db.Date
+  requested_entry_time  String?       @db.VarChar(5)
+  requested_lunch_start String?       @db.VarChar(5)
+  requested_lunch_end   String?       @db.VarChar(5)
+  requested_exit_time   String?       @db.VarChar(5)
+  absence_start_time    String?       @db.VarChar(5)
+  absence_end_time      String?       @db.VarChar(5)
+  reason                String        @db.Text
+  attachment_name       String?       @db.VarChar(255)
+  attachment_url        String?       @db.Text
+  admin_comment         String?       @db.Text
+  reviewed_at           DateTime?     @db.DateTime(0)
+  created_at            DateTime      @db.DateTime(0)
+  company_id            Int
+  user                  User          @relation("EmployeeRequestUser", fields: [user_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "employee_requests_ibfk_1")
+  reviewer              User?         @relation("EmployeeRequestReviewer", fields: [reviewed_by], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "employee_requests_ibfk_2")
+  target_manager        User?         @relation("EmployeeRequestTargetManager", fields: [target_manager_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "employee_requests_ibfk_3")
+  company               Company       @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "employee_requests_ibfk_4")
+
+  @@index([company_id], map: "employee_requests_company_id")
+  @@map("employee_requests")
+}
+
+model Holiday {
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(255)
+  holiday_date DateTime @db.Date
+  is_paid      Boolean  @default(true)
+  created_at   DateTime @db.DateTime(0)
+  company_id   Int
+  company      Company  @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "holidays_ibfk_1")
+
+  @@unique([company_id, holiday_date], map: "holidays_company_id_holiday_date")
+  @@index([company_id], map: "holidays_company_id")
+  @@map("holidays")
+}
+
+model KioskControl {
+  id               Int       @id @default(autoincrement())
+  session_version  Int       @default(1)
+  terminal_enabled Boolean   @default(false)
+  last_revoked_at  DateTime? @db.DateTime(0)
+  released_at      DateTime? @db.DateTime(0)
+  created_at       DateTime  @db.DateTime(0)
+  company_id       Int       @unique(map: "kiosk_controls_company_id")
+  company          Company   @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "kiosk_controls_ibfk_1")
+
+  @@map("kiosk_controls")
+}
+
+model MonthlyClosing {
+  id               Int                  @id @default(autoincrement())
+  period_month     String               @db.VarChar(7)
+  period_start     DateTime             @db.Date
+  period_end       DateTime             @db.Date
+  status           MonthlyClosingStatus @default(open)
+  snapshot         Json?
+  notes            String?              @db.Text
+  reopen_reason    String?              @db.Text
+  closed_by        Int?
+  closed_at        DateTime?            @db.DateTime(0)
+  reopened_by      Int?
+  reopened_at      DateTime?            @db.DateTime(0)
+  created_at       DateTime             @db.DateTime(0)
+  company_id       Int
+  closed_by_user   User?                @relation("MonthlyClosingClosedBy", fields: [closed_by], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "monthly_closings_ibfk_1")
+  reopened_by_user User?                @relation("MonthlyClosingReopenedBy", fields: [reopened_by], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "monthly_closings_ibfk_2")
+  company          Company              @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "monthly_closings_ibfk_3")
+
+  @@unique([company_id, period_month], map: "monthly_closings_company_id_period_month")
+  @@index([company_id], map: "monthly_closings_company_id")
+  @@map("monthly_closings")
+}
+
+model PlatformUser {
+  id            Int                  @id @default(autoincrement())
+  name          String               @db.VarChar(255)
+  email         String               @unique(map: "email") @db.VarChar(255)
+  password_hash String               @db.VarChar(255)
+  status        ActiveInactiveStatus @default(active)
+  created_at    DateTime             @db.DateTime(0)
+  updated_at    DateTime             @db.DateTime(0)
+  audit_logs    PlatformAuditLog[]
+
+  @@map("platform_users")
+}
+
+model PlatformAuditLog {
+  id               Int          @id @default(autoincrement())
+  platform_user_id Int
+  company_id       Int?
+  action           String       @db.VarChar(100)
+  metadata         Json?
+  ip_address       String?      @db.VarChar(64)
+  created_at       DateTime     @db.DateTime(0)
+  platform_user    PlatformUser @relation(fields: [platform_user_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "platform_audit_logs_ibfk_1")
+  company          Company?     @relation(fields: [company_id], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "platform_audit_logs_ibfk_2")
+
+  @@index([platform_user_id, created_at], map: "platform_audit_logs_platform_user_id_created_at")
+  @@index([company_id, created_at], map: "platform_audit_logs_company_id_created_at")
+  @@map("platform_audit_logs")
+}
+
+model RemotePhotoEvidence {
+  id         Int        @id @default(autoincrement())
+  record_id  Int        @unique(map: "record_id")
+  photo_data Bytes?     @db.LongBlob
+  mime_type  String     @db.VarChar(80)
+  expires_at DateTime   @db.DateTime(0)
+  deleted_at DateTime?  @db.DateTime(0)
+  created_at DateTime   @db.DateTime(0)
+  company_id Int
+  record     TimeRecord @relation(fields: [record_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "remote_photo_evidences_ibfk_1")
+  company    Company    @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "remote_photo_evidences_ibfk_2")
+
+  @@index([expires_at], map: "remote_photo_evidences_expires_at")
+  @@index([deleted_at], map: "remote_photo_evidences_deleted_at")
+  @@index([company_id], map: "remote_photo_evidences_company_id")
+  @@map("remote_photo_evidences")
+}
+
+model TimeRecord {
+  id                      Int                    @id @default(autoincrement())
+  user_id                 Int
+  record_time             DateTime               @db.DateTime(0)
+  record_type             RecordType
+  method                  RecordMethod
+  latitude                Decimal?               @db.Decimal(10, 8)
+  longitude               Decimal?               @db.Decimal(11, 8)
+  location_distance       Int?
+  location_status         LocationStatus?
+  photo_url               String?                @db.VarChar(255)
+  ip_address              String?                @db.VarChar(45)
+  device_info             String?                @db.Text
+  gps_accuracy            Decimal?               @db.Decimal(10, 2)
+  trust_level             TrustLevel             @default(medium)
+  status                  TimeRecordStatus?      @default(valid)
+  reviewed_by             Int?
+  review_reason           String?                @db.Text
+  reviewed_at             DateTime?              @db.DateTime(0)
+  created_at              DateTime               @db.DateTime(0)
+  company_id              Int
+  user                    User                   @relation("TimeRecordUser", fields: [user_id], references: [id], onDelete: NoAction, onUpdate: Cascade, map: "time_records_ibfk_1")
+  reviewer                User?                  @relation("TimeRecordReviewer", fields: [reviewed_by], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "time_records_ibfk_2")
+  company                 Company                @relation(fields: [company_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "time_records_ibfk_3")
+  email_delivery_failures EmailDeliveryFailure[]
+  email_delivery_logs     EmailDeliveryLog[]
+  remote_photo_evidence   RemotePhotoEvidence?
+
+  @@index([company_id], map: "time_records_company_id")
+  @@map("time_records")
+}

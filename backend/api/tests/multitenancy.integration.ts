@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -30,8 +32,29 @@ process.env.JWT_SECRET = 'multitenancy-integration-secret';
 process.env.NODE_ENV = 'test';
 process.env.DISABLE_TIME_RECORD_EMAIL = 'true';
 
+const execFileAsync = promisify(execFile);
+const prismaCli = path.resolve(process.cwd(), 'node_modules/prisma/build/index.js');
+await execFileAsync(process.execPath, [prismaCli, 'migrate', 'deploy', '--config', 'prisma.config.ts'], {
+  cwd: process.cwd(),
+  env: process.env,
+});
+await execFileAsync(process.execPath, [
+  prismaCli,
+  'migrate',
+  'diff',
+  '--config',
+  'prisma.config.ts',
+  '--from-config-datasource',
+  '--to-schema',
+  'prisma/schema.prisma',
+  '--exit-code',
+], {
+  cwd: process.cwd(),
+  env: process.env,
+});
+
 const { sequelize } = await import('../config/database.js');
-const { syncDatabase } = await import('../models/index.js');
+const { connectDatabase } = await import('../models/index.js');
 const {
   Company,
   CompanyProfile,
@@ -71,7 +94,7 @@ let server: ReturnType<typeof app.listen> | null = null;
 const cleanupFilePaths: string[] = [];
 
 try {
-  await syncDatabase();
+  await connectDatabase();
 
   const serverAddress = await new Promise<{ port: number }>((resolve, reject) => {
     const instance = app.listen(0, '127.0.0.1', () => {

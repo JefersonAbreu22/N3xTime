@@ -1,12 +1,12 @@
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
-import { syncDatabase } from '../models/index.js';
+import { connectDatabase } from '../models/index.js';
 import { PlatformUser } from '../models/PlatformUser.js';
 
 dotenv.config();
 
 const run = async () => {
-  await syncDatabase();
+  await connectDatabase();
   const name = process.env.PLATFORM_ADMIN_NAME || process.env.ADMIN_NAME || 'Administrador da Plataforma';
   const email = (process.env.PLATFORM_ADMIN_EMAIL || process.env.ADMIN_EMAIL)?.trim().toLowerCase();
   const password = process.env.PLATFORM_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD;
