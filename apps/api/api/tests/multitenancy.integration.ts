@@ -76,6 +76,8 @@ const { runWithTenant, runWithoutTenant } = await import('../tenancy/tenantConte
 const { fingerprintKioskKey } = await import('../utils/kioskKey.js');
 const { getManagedUserIds } = await import('../utils/leadership.js');
 const { cleanExpiredRemotePhotos } = await import('../services/RemotePhotoRetentionService.js');
+const { applyPartialAbsenceCredit } = await import('../services/AttendanceCalculator.js');
+const { mapLegacyTenantColumns } = await import('../services/tenantTransferService.js');
 const { default: app } = await import('../app.js');
 
 type ApiResponse = { status: number; body: any; text: string };
@@ -250,6 +252,35 @@ try {
     { id: platformUser.id, role: 'platform_admin', scope: 'platform' }, process.env.JWT_SECRET!, { expiresIn: '10m' }
   );
   const today = new Date().toISOString().slice(0, 10);
+
+  await run('abono parcial preserva o crédito positivo da regra legada', () => {
+    const joaoGabriel = applyPartialAbsenceCredit({ requiredMinutes: 540, workedMinutes: 261, absenceMinutes: 346 });
+    const joaoMiguel = applyPartialAbsenceCredit({ requiredMinutes: 540, workedMinutes: 204, absenceMinutes: 447 });
+    assert.equal(joaoGabriel.creditedMinutes, 346);
+    assert.equal(joaoGabriel.requiredMinutes, 194);
+    assert.equal(261 - joaoGabriel.requiredMinutes, 67);
+    assert.equal(joaoMiguel.creditedMinutes, 447);
+    assert.equal(joaoMiguel.requiredMinutes, 93);
+    assert.equal(204 - joaoMiguel.requiredMinutes, 111);
+  });
+  await run('importador converte os campos legados de intervalo abonado', () => {
+    assert.deepEqual(mapLegacyTenantColumns('employee_requests', {
+      excused_start_time: '08:00',
+      excused_end_time: '13:46',
+    }), {
+      absence_start_time: '08:00',
+      absence_end_time: '13:46',
+    });
+    assert.deepEqual(mapLegacyTenantColumns('employee_requests', {
+      absence_start_time: '09:00',
+      absence_end_time: '10:00',
+      excused_start_time: '08:00',
+      excused_end_time: '13:46',
+    }), {
+      absence_start_time: '09:00',
+      absence_end_time: '10:00',
+    });
+  });
 
   await run('consultas de model exigem contexto de tenant', async () => {
     await assert.rejects(() => User.findAll(), /sem contexto multitenant/i);

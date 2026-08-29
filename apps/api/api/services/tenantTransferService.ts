@@ -3,7 +3,30 @@ import { escape as mysqlEscape } from 'mysql2';
 
 const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 const EXCLUDED_TENANT_TABLES = new Set(['company_memberships', 'platform_audit_logs', 'tenant_transfer_logs']);
+const LEGACY_COLUMN_ALIASES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  employee_requests: {
+    absence_start_time: 'excused_start_time',
+    absence_end_time: 'excused_end_time',
+  },
+};
 let importInProgress = false;
+
+export const mapLegacyTenantColumns = (table: string, row: Record<string, unknown>) => {
+  const mapped: Record<string, ExecuteValues> = {};
+  const aliases = LEGACY_COLUMN_ALIASES[table];
+  if (!aliases) return mapped;
+
+  for (const [targetColumn, legacyColumn] of Object.entries(aliases)) {
+    const canonicalValue = row[targetColumn];
+    const legacyValue = row[legacyColumn];
+    const value = canonicalValue !== undefined && canonicalValue !== null && canonicalValue !== ''
+      ? canonicalValue
+      : legacyValue;
+    if (value !== undefined) mapped[targetColumn] = value as ExecuteValues;
+  }
+
+  return mapped;
+};
 
 const ident = (value: string) => {
   if (!/^[A-Za-z0-9_]+$/.test(value)) throw new Error(`Identificador SQL inválido: ${value}`);
@@ -179,6 +202,7 @@ export const importTenantDump = async (companyId: number, buffer: Buffer, replac
         for (const row of rows) {
           const oldId = Number(row.id); const payload: Record<string, ExecuteValues> = {};
           for (const [key, value] of Object.entries(row)) if (allowed.has(key) && key !== 'id' && key !== 'company_id') payload[key] = value;
+          for (const [key, value] of Object.entries(mapLegacyTenantColumns(table, row))) if (allowed.has(key)) payload[key] = value;
           payload.company_id = companyId;
           for (const fk of tableFks) {
             if (fk.COLUMN_NAME === 'company_id') continue;

@@ -48,15 +48,15 @@ export const getTimeRangeMinutes = (startTime?: string | null, endTime?: string 
 
 export const applyPartialAbsenceCredit = ({
   requiredMinutes,
-  workedMinutes,
   absenceMinutes,
 }: {
   requiredMinutes: number;
   workedMinutes: number;
   absenceMinutes: number;
 }) => {
-  const uncoveredMinutes = Math.max(requiredMinutes - workedMinutes, 0);
-  const creditedMinutes = Math.min(Math.max(absenceMinutes, 0), uncoveredMinutes);
+  // Mantém a regra legada: todo o intervalo abonado reduz a carga prevista,
+  // inclusive quando isso transforma o saldo restante do dia em crédito.
+  const creditedMinutes = Math.max(absenceMinutes, 0);
   return {
     creditedMinutes,
     requiredMinutes: Math.max(requiredMinutes - creditedMinutes, 0),
