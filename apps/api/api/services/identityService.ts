@@ -86,6 +86,6 @@ export const syncAccountPassword = async (account: Account, passwordHash: string
   const memberships = await CompanyMembership.findAll({ where: { account_id: account.id } });
   const userIds = memberships.map((item) => item.user_id);
   if (userIds.length) {
-    await runWithoutTenant(() => User.update({ password_hash: passwordHash }, { where: { id: userIds } }));
+    await runWithoutTenant(() => User.update({ password_hash: passwordHash, must_change_password: false }, { where: { id: userIds } }));
   }
 };

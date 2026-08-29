@@ -88,6 +88,17 @@ enum TrustLevel {
   low
 }
 
+enum TenantTransferOperation {
+  import
+  backup
+}
+
+enum TenantTransferStatus {
+  running
+  success
+  failed
+}
+
 enum UserRole {
   admin
   manager
@@ -133,6 +144,8 @@ model Company {
   kiosk_control                KioskControl?
   monthly_closings             MonthlyClosing[]
   platform_audit_logs          PlatformAuditLog[]
+  company_memberships          CompanyMembership[]
+  tenant_transfer_logs         TenantTransferLog[]
   remote_photo_evidences       RemotePhotoEvidence[]
   time_records                 TimeRecord[]
   users                        User[]
@@ -241,6 +254,7 @@ model User {
   reopened_months               MonthlyClosing[]             @relation("MonthlyClosingReopenedBy")
   time_records                  TimeRecord[]                 @relation("TimeRecordUser")
   reviewed_time_records         TimeRecord[]                 @relation("TimeRecordReviewer")
+  company_membership            CompanyMembership?
 
   @@unique([company_id, cpf], map: "users_company_id_cpf")
   @@unique([company_id, registration_number], map: "users_company_id_registration_number")
@@ -512,6 +526,7 @@ model PlatformUser {
   created_at    DateTime             @db.DateTime(0)
   updated_at    DateTime             @db.DateTime(0)
   audit_logs    PlatformAuditLog[]
+  tenant_transfer_logs TenantTransferLog[]
 
   @@map("platform_users")
 }
@@ -583,25 +598,29 @@ model TimeRecord {
 }
 
 model Account {
-  id            Int      @id @default(autoincrement())
-  name          String   @db.VarChar(255)
-  email         String   @unique(map: "accounts_email_unique") @db.VarChar(255)
-  password_hash String   @db.VarChar(255)
-  status        String   @default("active") @db.VarChar(20)
-  created_at    DateTime @db.DateTime(0)
-  updated_at    DateTime @db.DateTime(0)
+  id                  Int                    @id @default(autoincrement())
+  name                String                 @db.VarChar(255)
+  email               String                 @unique(map: "accounts_email_unique") @db.VarChar(255)
+  password_hash       String                 @db.VarChar(255)
+  status              ActiveInactiveStatus   @default(active)
+  created_at          DateTime               @default(now()) @db.DateTime(0)
+  updated_at          DateTime               @default(now()) @updatedAt @db.DateTime(0)
+  company_memberships CompanyMembership[]
 
   @@map("accounts")
 }
 
 model CompanyMembership {
-  id         Int      @id @default(autoincrement())
+  id         Int                  @id @default(autoincrement())
   account_id Int
   company_id Int
-  user_id    Int      @unique(map: "company_memberships_user_unique")
-  status     String   @default("active") @db.VarChar(20)
-  created_at DateTime @db.DateTime(0)
-  updated_at DateTime @db.DateTime(0)
+  user_id    Int                  @unique(map: "company_memberships_user_unique")
+  status     ActiveInactiveStatus @default(active)
+  created_at DateTime             @default(now()) @db.DateTime(0)
+  updated_at DateTime             @default(now()) @updatedAt @db.DateTime(0)
+  account    Account              @relation(fields: [account_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "company_memberships_account_fk")
+  company    Company              @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "company_memberships_company_fk")
+  user       User                 @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "company_memberships_user_fk")
 
   @@unique([account_id, company_id], map: "company_memberships_account_company")
   @@index([company_id], map: "company_memberships_company_id")
@@ -609,18 +628,21 @@ model CompanyMembership {
 }
 
 model TenantTransferLog {
-  id               Int       @id @default(autoincrement())
+  id               Int                     @id @default(autoincrement())
   company_id       Int
   platform_user_id Int
-  operation        String    @db.VarChar(20)
-  filename         String    @db.VarChar(255)
-  status           String    @db.VarChar(20)
-  rows_processed   Int       @default(0)
-  details          String?   @db.LongText
-  error_message    String?   @db.Text
-  created_at       DateTime  @db.DateTime(0)
-  finished_at      DateTime? @db.DateTime(0)
+  operation        TenantTransferOperation
+  filename         String                  @db.VarChar(255)
+  status           TenantTransferStatus    @default(running)
+  rows_processed   Int                     @default(0)
+  details          String?                 @db.LongText
+  error_message    String?                 @db.Text
+  created_at       DateTime                @default(now()) @db.DateTime(0)
+  finished_at      DateTime?               @db.DateTime(0)
+  company          Company                 @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "tenant_transfer_logs_company_fk")
+  platform_user    PlatformUser            @relation(fields: [platform_user_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "tenant_transfer_logs_platform_user_fk")
 
   @@index([company_id, created_at], map: "tenant_transfer_logs_company_created")
+  @@index([platform_user_id], map: "tenant_transfer_logs_platform_user_fk")
   @@map("tenant_transfer_logs")
 }

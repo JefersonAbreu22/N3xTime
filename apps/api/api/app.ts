@@ -24,6 +24,7 @@ import platformRoutes from './routes/platform.js'
 import fileRoutes from './routes/files.js'
 import './models/index.js'
 import { assertSecurityConfiguration, corsOptions } from './config/security.js'
+import { sequelize } from './config/database.js'
 import {
   apiRateLimiter,
   noStoreMiddleware,
@@ -84,15 +85,23 @@ app.use('/api/files', fileRoutes)
 /**
  * health
  */
-app.use(
-  '/api/health',
-  (req: Request, res: Response): void => {
-    res.status(200).json({
-      success: true,
-      message: 'ok',
-    })
-  },
-)
+app.get('/api/health', (_req: Request, res: Response): void => {
+  res.status(200).json({ success: true, message: 'ok' })
+})
+
+app.get('/api/health/live', (_req: Request, res: Response): void => {
+  res.status(200).json({ success: true, status: 'live' })
+})
+
+app.get('/api/health/ready', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    await sequelize.query('SELECT 1')
+    res.status(200).json({ success: true, status: 'ready', database: 'ok' })
+  } catch (error) {
+    console.error('Readiness check failed', error)
+    res.status(503).json({ success: false, status: 'not_ready', database: 'unavailable' })
+  }
+})
 
 /**
  * error handler middleware
@@ -125,7 +134,7 @@ app.use((error: Error & { status?: number; statusCode?: number; code?: string; t
   if (error.code === 'LIMIT_FILE_SIZE') {
     res.status(413).json({
       success: false,
-      error: 'O anexo excede o limite de 10MB.',
+      error: 'O arquivo excede o limite permitido para esta operação.',
     })
     return
   }

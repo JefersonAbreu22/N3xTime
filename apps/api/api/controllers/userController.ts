@@ -4,11 +4,12 @@ import { z } from 'zod';
 import { Op, col, fn, UniqueConstraintError } from 'sequelize';
 import { AuthRequest } from '../middlewares/authMiddleware.js';
 import { User } from '../models/User.js';
+import { Account } from '../models/Account.js';
+import { CompanyMembership } from '../models/CompanyMembership.js';
 import { BiometricSample } from '../models/BiometricSample.js';
 import { WorkSchedule } from '../models/WorkSchedule.js';
 import { PASSWORD_POLICY_MESSAGE, passwordSchema } from '../validation/passwordPolicy.js';
 import { dateOnlySchema } from '../validation/dateOnly.js';
-import { runWithoutTenant } from '../tenancy/tenantContext.js';
 import { TenantReferenceError } from '../tenancy/tenantReferenceGuard.js';
 import { getLeadershipAssignments, getManagedUserIds, isManagerResponsibleForUser } from '../utils/leadership.js';
 
@@ -217,12 +218,10 @@ export const createEmployee = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    const existingEmailUser = await runWithoutTenant(() => User.findOne({
-      where: { email: payload.email },
-      attributes: ['id'],
-    }));
-    if (existingEmailUser) {
-      return res.status(409).json({ success: false, error: 'Este e-mail já está vinculado a outra conta.' });
+    const normalizedEmail = payload.email.trim().toLowerCase();
+    const existingAccount = await Account.findOne({ where: { email: normalizedEmail } });
+    if (existingAccount && existingAccount.status !== 'active') {
+      return res.status(409).json({ success: false, error: 'A conta global vinculada a este e-mail está inativa.' });
     }
 
     const existingUser = await User.findOne({
@@ -249,14 +248,14 @@ export const createEmployee = async (req: AuthRequest, res: Response) => {
       return res.status(409).json({ success: false, error: 'Este PIN ja esta em uso por outro colaborador.' });
     }
 
-    const password_hash = await bcrypt.hash(payload.password, 12);
+    const password_hash = existingAccount?.password_hash ?? await bcrypt.hash(payload.password, 12);
     const pinCodeHash = payload.pin_code ? await bcrypt.hash(payload.pin_code, 10) : null;
 
     const user = await User.create({
       name: payload.name,
       cpf: payload.cpf,
       registration_number: payload.registration_number,
-      email: payload.email,
+      email: normalizedEmail,
       password_hash,
       role: targetRole,
       work_type: payload.work_type,
@@ -267,6 +266,19 @@ export const createEmployee = async (req: AuthRequest, res: Response) => {
       status: payload.status ?? 'active',
       hire_date: payload.hire_date ?? null,
       requires_time_tracking: role === 'admin' ? (payload.requires_time_tracking ?? true) : true,
+    });
+
+    const account = existingAccount ?? await Account.create({
+      name: user.name,
+      email: normalizedEmail,
+      password_hash,
+      status: 'active',
+    });
+    await CompanyMembership.create({
+      account_id: account.id,
+      company_id: user.company_id,
+      user_id: user.id,
+      status: user.status === 'active' ? 'active' : 'inactive',
     });
 
     await upsertUserSchedule({
@@ -348,18 +360,14 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     console.log(JSON.stringify(req.body.work_schedule, null, 2));
     console.log('--- PARSED ---');
     console.log(JSON.stringify(p.work_schedule, null, 2));
-    if (p.email && p.email !== user.email) {
-      const existingEmailUser = await runWithoutTenant(() => User.findOne({
-        where: { email: p.email, id: { [Op.ne]: user.id } },
-        attributes: ['id'],
-      }));
-      if (existingEmailUser) {
-        return res.status(409).json({ success: false, error: 'Este e-mail já está vinculado a outra conta.' });
-      }
+    if (p.email && p.email.trim().toLowerCase() !== user.email.trim().toLowerCase()) {
+      return res.status(409).json({
+        success: false,
+        error: 'O e-mail de acesso não pode ser alterado pela edição de colaborador. Use o fluxo de gestão da conta.',
+      });
     }
     if (p.name) user.name = p.name;
     if (p.cpf) user.cpf = p.cpf;
-    if (p.email) user.email = p.email;
     if (p.work_type) user.work_type = p.work_type;
     if (p.status) user.status = p.status;
     if (p.hire_date !== undefined) user.hire_date = p.hire_date || null;
@@ -402,7 +410,28 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     }
 
     if (p.password) {
-      user.password_hash = await bcrypt.hash(p.password, 12);
+      const membership = await CompanyMembership.findOne({ where: { user_id: user.id } });
+      if (membership) {
+        const activeMemberships = await CompanyMembership.count({
+          where: { account_id: membership.account_id, status: 'active' },
+        });
+        if (activeMemberships > 1) {
+          return res.status(409).json({
+            success: false,
+            error: 'A senha de uma conta compartilhada entre empresas deve ser alterada pelo próprio usuário.',
+          });
+        }
+        const account = await Account.findByPk(membership.account_id);
+        if (!account || account.status !== 'active') {
+          return res.status(409).json({ success: false, error: 'Conta global indisponível para alteração de senha.' });
+        }
+        const passwordHash = await bcrypt.hash(p.password, 12);
+        account.password_hash = passwordHash;
+        user.password_hash = passwordHash;
+        await account.save();
+      } else {
+        user.password_hash = await bcrypt.hash(p.password, 12);
+      }
     }
 
     await upsertUserSchedule({
@@ -411,6 +440,12 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     });
 
     await user.save();
+    if (p.status) {
+      await CompanyMembership.update(
+        { status: p.status },
+        { where: { user_id: user.id } },
+      );
+    }
 
     await AuditService.log({
       user_id: req.user?.id,
@@ -447,6 +482,10 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     // Em vez de hard delete, faremos soft delete / inativação
     user.status = 'inactive';
     await user.save();
+    await CompanyMembership.update(
+      { status: 'inactive' },
+      { where: { user_id: user.id } },
+    );
 
     await AuditService.log({
       user_id: req.user?.id,

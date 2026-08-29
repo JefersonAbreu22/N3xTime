@@ -12,6 +12,7 @@ module.exports = {
       merge_logs: true,
       env: {
         NODE_ENV: "production",
+        HOST: "127.0.0.1",
         PORT: 4989
       }
     },
@@ -27,8 +28,9 @@ module.exports = {
       merge_logs: true,
       env: {
         NODE_ENV: "production",
-        HOST: "0.0.0.0",
-        PORT: 4979
+        HOST: "127.0.0.1",
+        PORT: 4979,
+        API_PROXY_TARGET: "http://127.0.0.1:4989"
       }
     }
   ]

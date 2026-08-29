@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main, monorepo]
+  pull_request:
+    branches: [main, monorepo]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.24.0 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure test environment
+        shell: bash
+        run: |
+          cat > apps/api/.env <<'EOF'
+          PORT=4989
+          DB_HOST=127.0.0.1
+          DB_PORT=3306
+          DB_NAME=n3xtime_ci
+          TEST_DB_NAME=n3xtime_ci_test
+          DB_USER=root
+          DB_PASS=root
+          JWT_SECRET=n3xtime-ci-secret-with-more-than-32-characters
+          DISABLE_TIME_RECORD_EMAIL=true
+          APP_PUBLIC_URL=http://localhost:5173
+          EOF
+
+      - name: Validate schema
+        run: pnpm db:validate
+
+      - name: Build API
+        run: pnpm build:api
+
+      - name: Build web
+        run: pnpm build:web
+
+      - name: Typecheck web
+        run: pnpm typecheck
+
+      - name: Lint web (advisory)
+        continue-on-error: true
+        run: pnpm lint
+
+      - name: Multitenancy integration
+        run: pnpm test:multitenancy

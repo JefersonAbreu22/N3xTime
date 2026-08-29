@@ -2,7 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { KioskControl } from '../models/KioskControl.js';
 import { runWithTenant } from '../tenancy/tenantContext.js';
+import { Account } from '../models/Account.js';
 import { Company } from '../models/Company.js';
+import { CompanyMembership } from '../models/CompanyMembership.js';
 import { PlatformUser } from '../models/PlatformUser.js';
 import { User } from '../models/User.js';
 import { getJwtSecret } from '../config/security.js';
@@ -69,6 +71,29 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       if (decoded.impersonatedBy) {
         const platformUser = await PlatformUser.findOne({ where: { id: decoded.impersonatedBy, status: 'active' }, attributes: ['id'] });
         if (!platformUser) return res.status(403).json({ success: false, error: 'Sessão de acesso global inválida.' });
+      } else {
+        const accountId = Number(decoded.accountId);
+        const membershipId = Number(decoded.membershipId);
+        if (!Number.isInteger(accountId) || accountId <= 0 || !Number.isInteger(membershipId) || membershipId <= 0) {
+          return res.status(403).json({ success: false, error: 'Sessão sem vínculo de conta válido.' });
+        }
+
+        const [account, membership] = await Promise.all([
+          Account.findOne({ where: { id: accountId, status: 'active' }, attributes: ['id'] }),
+          CompanyMembership.findOne({
+            where: {
+              id: membershipId,
+              account_id: accountId,
+              company_id: companyId,
+              user_id: decoded.id,
+              status: 'active',
+            },
+            attributes: ['id'],
+          }),
+        ]);
+        if (!account || !membership) {
+          return res.status(403).json({ success: false, error: 'Acesso à empresa revogado ou inválido.' });
+        }
       }
       const authenticatedUser = await runWithTenant(companyId, () =>
         User.findOne({ where: { id: decoded.id, status: 'active' }, attributes: ['id', 'role', 'must_change_password'] })

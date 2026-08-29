@@ -5,7 +5,7 @@ import { Op, QueryTypes, Transaction } from 'sequelize';
 import { z } from 'zod';
 import { sequelize } from '../config/database.js';
 import { AuthRequest } from '../middlewares/authMiddleware.js';
-import { Company, CompanyProfile, KioskControl, PlatformAuditLog, PlatformUser, User } from '../models/index.js';
+import { Account, Company, CompanyMembership, CompanyProfile, KioskControl, PlatformAuditLog, PlatformUser, User } from '../models/index.js';
 import { runWithTenant, runWithoutTenant } from '../tenancy/tenantContext.js';
 import { passwordSchema } from '../validation/passwordPolicy.js';
 import { fingerprintKioskKey } from '../utils/kioskKey.js';
@@ -327,6 +327,12 @@ export const provisionCompany = async (req: AuthRequest, res: Response) => {
     });
     if (duplicate) return res.status(409).json({ success: false, error: 'Slug ou CNPJ já cadastrado.' });
 
+    const existingAccount = await Account.findOne({ where: { email: payload.admin.email } });
+    if (existingAccount && existingAccount.status !== 'active') {
+      return res.status(409).json({ success: false, error: 'A conta global do administrador está inativa.' });
+    }
+    const adminPasswordHash = existingAccount?.password_hash ?? await bcrypt.hash(payload.admin.password, 12);
+
     const company = await sequelize.transaction(async (transaction) => {
       const createdCompany = await Company.create({
         legal_name: payload.legal_name,
@@ -351,16 +357,28 @@ export const provisionCompany = async (req: AuthRequest, res: Response) => {
           zip_code: payload.zip_code || null,
         }, { transaction });
         await KioskControl.create({ session_version: 1, terminal_enabled: false }, { transaction });
-        await User.create({
+        const account = existingAccount ?? await Account.create({
+          name: payload.admin.name,
+          email: payload.admin.email,
+          password_hash: adminPasswordHash,
+          status: 'active',
+        }, { transaction });
+        const adminUser = await User.create({
           name: payload.admin.name,
           cpf: payload.admin.cpf,
           registration_number: payload.admin.registration_number,
           email: payload.admin.email,
-          password_hash: await bcrypt.hash(payload.admin.password, 12),
+          password_hash: adminPasswordHash,
           role: 'admin',
           work_type: 'presential',
           status: 'active',
-          must_change_password: true,
+          must_change_password: !existingAccount,
+        }, { transaction });
+        await CompanyMembership.create({
+          account_id: account.id,
+          company_id: createdCompany.id,
+          user_id: adminUser.id,
+          status: 'active',
         }, { transaction });
       });
 

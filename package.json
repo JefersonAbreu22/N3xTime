@@ -12,6 +12,8 @@
     "build:web": "pnpm --filter @n3xtime/web build",
     "lint": "pnpm --filter @n3xtime/web lint",
     "typecheck": "pnpm --filter @n3xtime/web typecheck",
+    "test:multitenancy": "pnpm --filter @n3xtime/api test:multitenancy",
+    "preflight": "pnpm db:validate && pnpm build:api && pnpm build:web && pnpm typecheck",
     "admin:create": "pnpm --filter @n3xtime/api admin:create",
     "admin:create:prod": "pnpm --filter @n3xtime/api admin:create:prod",
     "db:local:up": "docker compose -f docker-compose.local.yml up -d --wait mysql",

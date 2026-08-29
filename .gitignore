@@ -92,3 +92,4 @@ desktop.ini
 .pnpm-store/
 
 *.patch
+apps/web/*.zip

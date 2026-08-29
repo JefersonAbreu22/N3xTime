@@ -44,7 +44,7 @@ export const apiRateLimiter = rateLimit({
   ...limiterDefaults,
   windowMs: 5 * 60 * 1000,
   limit: 600,
-  skip: (req) => req.method === 'OPTIONS' || req.path === '/api/health',
+  skip: (req) => req.method === 'OPTIONS' || req.path.startsWith('/api/health'),
   message: { success: false, error: 'Muitas requisições. Aguarde alguns instantes e tente novamente.' },
 });
 
@@ -83,4 +83,11 @@ export const passwordResetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   message: { success: false, error: 'Muitas tentativas. Aguarde alguns minutos antes de tentar novamente.' },
+});
+
+export const platformTransferRateLimiter = rateLimit({
+  ...limiterDefaults,
+  windowMs: 10 * 60 * 1000,
+  limit: 3,
+  message: { success: false, error: 'Limite de operações de backup/importação atingido. Aguarde 10 minutos.' },
 });

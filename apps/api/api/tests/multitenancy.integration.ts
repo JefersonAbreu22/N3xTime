@@ -28,7 +28,7 @@ await rootConnection.query(`DROP DATABASE IF EXISTS \`${testDatabase}\``);
 await rootConnection.query(`CREATE DATABASE \`${testDatabase}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
 
 process.env.DB_NAME = testDatabase;
-process.env.JWT_SECRET = 'multitenancy-integration-secret';
+process.env.JWT_SECRET = 'multitenancy-integration-secret-2026';
 process.env.NODE_ENV = 'test';
 process.env.DISABLE_TIME_RECORD_EMAIL = 'true';
 
@@ -57,7 +57,9 @@ await execFileAsync(process.execPath, [
 const { sequelize } = await import('../config/database.js');
 const { connectDatabase } = await import('../models/index.js');
 const {
+  Account,
   Company,
+  CompanyMembership,
   CompanyProfile,
   Department,
   DepartmentHierarchyLevel,
@@ -194,6 +196,28 @@ try {
 
   const tenantA = await createTenantFixture(companyA, 'a');
   const tenantB = await createTenantFixture(companyB, 'b');
+
+  const createIdentity = async (user: any, company: any) => {
+    const account = await Account.create({
+      name: user.name,
+      email: String(user.email).toLowerCase(),
+      password_hash: user.password_hash,
+      status: 'active',
+    });
+    const membership = await CompanyMembership.create({
+      account_id: account.id,
+      company_id: company.id,
+      user_id: user.id,
+      status: 'active',
+    });
+    return { account, membership };
+  };
+
+  const identityAdminA = await createIdentity(tenantA.admin, companyA);
+  const identityAdminB = await createIdentity(tenantB.admin, companyB);
+  const identityManagerA = await createIdentity(tenantA.manager, companyA);
+  const identityEmployeeA = await createIdentity(tenantA.employee, companyA);
+
   const uploadsDirectory = path.resolve(process.cwd(), 'api', 'uploads');
   const requestsDirectory = path.join(uploadsDirectory, 'requests');
   const remotePhotosDirectory = path.join(uploadsDirectory, 'remote_photos');
@@ -206,13 +230,22 @@ try {
   }
   const platformUser = await PlatformUser.create({ name: 'Super Admin Teste', email: tenantA.admin.email, password_hash: passwordHash, status: 'active' });
 
-  const signTenant = (user: any, company: any) => jwt.sign(
-    { id: user.id, role: user.role, scope: 'tenant', companyId: company.id }, process.env.JWT_SECRET!, { expiresIn: '10m' }
+  const signTenant = (user: any, company: any, identity: { account: any; membership: any }) => jwt.sign(
+    {
+      id: user.id,
+      accountId: identity.account.id,
+      membershipId: identity.membership.id,
+      role: user.role,
+      scope: 'tenant',
+      companyId: company.id,
+    },
+    process.env.JWT_SECRET!,
+    { expiresIn: '10m' },
   );
-  const adminTokenA = signTenant(tenantA.admin, companyA);
-  const adminTokenB = signTenant(tenantB.admin, companyB);
-  const managerTokenA = signTenant(tenantA.manager, companyA);
-  const employeeTokenA = signTenant(tenantA.employee, companyA);
+  const adminTokenA = signTenant(tenantA.admin, companyA, identityAdminA);
+  const adminTokenB = signTenant(tenantB.admin, companyB, identityAdminB);
+  const managerTokenA = signTenant(tenantA.manager, companyA, identityManagerA);
+  const employeeTokenA = signTenant(tenantA.employee, companyA, identityEmployeeA);
   const platformToken = jwt.sign(
     { id: platformUser.id, role: 'platform_admin', scope: 'platform' }, process.env.JWT_SECRET!, { expiresIn: '10m' }
   );
@@ -249,6 +282,55 @@ try {
     const response = await api('/api/auth/me', { token: adminTokenB });
     assert.equal(response.status, 200);
     assert.equal(response.body.data.user.company.id, companyB.id);
+  });
+
+  await run('mesmo login acessa duas empresas sem misturar os tenants', async () => {
+    const sharedEmail = 'socio.multitenant@teste.local';
+    const payloadBase = {
+      name: 'Sócio Multitenant',
+      email: sharedEmail,
+      password,
+      work_type: 'presential',
+      role: 'employee',
+    };
+    const createdA = await api('/api/users', {
+      token: adminTokenA,
+      body: { ...payloadBase, cpf: '90909090901', registration_number: 'SOC-A' },
+    });
+    const createdB = await api('/api/users', {
+      token: adminTokenB,
+      body: { ...payloadBase, cpf: '90909090902', registration_number: 'SOC-B' },
+    });
+    assert.equal(createdA.status, 200);
+    assert.equal(createdB.status, 200);
+
+    const login = await api('/api/auth/login', { body: { email: sharedEmail, password } });
+    assert.equal(login.status, 200);
+    assert.equal(login.body.data.requires_company_selection, true);
+    const companyIds = login.body.data.companies.map((item: any) => item.companyId).sort((a: number, b: number) => a - b);
+    assert.deepEqual(companyIds, [companyA.id, companyB.id].sort((a, b) => a - b));
+
+    const selectedA = await api('/api/auth/company/select', {
+      token: login.body.data.selection_token,
+      body: { companyId: companyA.id },
+    });
+    const selectedB = await api('/api/auth/company/select', {
+      token: login.body.data.selection_token,
+      body: { companyId: companyB.id },
+    });
+    assert.equal(selectedA.body.data.user.company.id, companyA.id);
+    assert.equal(selectedB.body.data.user.company.id, companyB.id);
+    assert.notEqual(selectedA.body.data.user.id, selectedB.body.data.user.id);
+  });
+
+  await run('membership revogado invalida imediatamente uma sessão tenant', async () => {
+    await identityEmployeeA.membership.update({ status: 'inactive' });
+    try {
+      const response = await api('/api/auth/me', { token: employeeTokenA });
+      assert.equal(response.status, 403);
+    } finally {
+      await identityEmployeeA.membership.update({ status: 'active' });
+    }
   });
   await run('listagem de equipe do tenant A não contém usuários do tenant B', async () => {
     const response = await api('/api/users/team', { token: adminTokenA });

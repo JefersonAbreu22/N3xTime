@@ -1,9 +1,10 @@
 import mysql, { type Connection, type ExecuteValues, type RowDataPacket } from 'mysql2/promise';
 import { escape as mysqlEscape } from 'mysql2';
-import crypto from 'node:crypto';
 
 const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 const EXCLUDED_TENANT_TABLES = new Set(['company_memberships', 'platform_audit_logs', 'tenant_transfer_logs']);
+let importInProgress = false;
+
 const ident = (value: string) => {
   if (!/^[A-Za-z0-9_]+$/.test(value)) throw new Error(`Identificador SQL inválido: ${value}`);
   return `\`${value}\``;
@@ -18,6 +19,43 @@ const connectionOptions = (database?: string) => ({
   charset: 'utf8mb4',
   multipleStatements: false,
 });
+
+const transferConnectionOptions = () => {
+  const database = String(process.env.DB_TRANSFER_NAME || '').trim();
+  const primaryDatabase = String(process.env.DB_NAME || '').trim();
+  const user = String(process.env.DB_TRANSFER_USER || '').trim();
+  const password = process.env.DB_TRANSFER_PASS;
+
+  if (!database || !user || password === undefined) {
+    throw new Error('Configure DB_TRANSFER_NAME, DB_TRANSFER_USER e DB_TRANSFER_PASS para habilitar importações.');
+  }
+  if (!/^[A-Za-z0-9_]+$/.test(database) || database === primaryDatabase) {
+    throw new Error('DB_TRANSFER_NAME deve apontar para um banco de staging separado do banco principal.');
+  }
+
+  return {
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT || 3306),
+    user,
+    password,
+    database,
+    charset: 'utf8mb4',
+    multipleStatements: false,
+  };
+};
+
+const resetTransferDatabase = async (connection: Connection) => {
+  const [rows] = await connection.query<RowDataPacket[]>('SHOW TABLES');
+  await connection.query('SET FOREIGN_KEY_CHECKS=0');
+  try {
+    for (const row of rows) {
+      const table = String(Object.values(row)[0] || '');
+      if (table) await connection.query(`DROP TABLE IF EXISTS ${ident(table)}`);
+    }
+  } finally {
+    await connection.query('SET FOREIGN_KEY_CHECKS=1');
+  }
+};
 
 const splitSqlStatements = (sql: string) => {
   const clean = sql.replace(/\/\*!\d*[\s\S]*?\*\//g, '').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -42,6 +80,9 @@ const loadDumpIntoTemporaryDatabase = async (connection: Connection, sql: string
   let executed = 0;
   for (const statement of splitSqlStatements(sql)) {
     const normalized = statement.replace(/^\s+/, '');
+    if (/^(INSERT|REPLACE)\s+INTO\s+`?[A-Za-z0-9_]+`?\s*\./i.test(normalized)) {
+      throw new Error('Dump incompatível: INSERT/REPLACE com banco qualificado não é permitido.');
+    }
     if (/^(CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?[A-Za-z0-9_]+`?\s*\()/i.test(normalized)
       || /^(INSERT|REPLACE)\s+INTO\s+`?[A-Za-z0-9_]+`?/i.test(normalized)) {
       await connection.query(statement); executed += 1;
@@ -105,12 +146,15 @@ export const createTenantBackup = async (companyId: number) => {
 export const importTenantDump = async (companyId: number, buffer: Buffer, replaceExisting = true) => {
   if (!buffer.length || buffer.length > MAX_IMPORT_BYTES) throw new Error('Dump vazio ou acima do limite de 50 MB.');
   const database = String(process.env.DB_NAME || '').trim(); if (!database) throw new Error('DB_NAME não configurado.');
-  const tempDb = `n3xtime_import_${crypto.randomUUID().replace(/-/g, '').slice(0, 18)}`;
-  const admin = await mysql.createConnection(connectionOptions());
-  await admin.query(`CREATE DATABASE ${ident(tempDb)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-  const source = await mysql.createConnection(connectionOptions(tempDb));
-  const target = await mysql.createConnection(connectionOptions(database));
+  if (importInProgress) throw new Error('Já existe uma importação de tenant em andamento. Aguarde a conclusão.');
+  importInProgress = true;
+
+  let source: Connection | null = null;
+  let target: Connection | null = null;
   try {
+    source = await mysql.createConnection(transferConnectionOptions());
+    target = await mysql.createConnection(connectionOptions(database));
+    await resetTransferDatabase(source);
     await loadDumpIntoTemporaryDatabase(source, buffer.toString('utf8'));
     const { byTable, tenantTables, fks } = await tenantMetadata(target, database);
     const [sourceTablesRows] = await source.query<RowDataPacket[]>('SHOW TABLES');
@@ -173,7 +217,11 @@ export const importTenantDump = async (companyId: number, buffer: Buffer, replac
     } catch (error) { await target.rollback(); throw error; }
     return { rowsProcessed, tables: ordered.length };
   } finally {
-    await source.end().catch(() => undefined); await target.end().catch(() => undefined);
-    await admin.query(`DROP DATABASE IF EXISTS ${ident(tempDb)}`).catch(() => undefined); await admin.end().catch(() => undefined);
+    if (source) {
+      await resetTransferDatabase(source).catch(() => undefined);
+      await source.end().catch(() => undefined);
+    }
+    if (target) await target.end().catch(() => undefined);
+    importInProgress = false;
   }
 };
