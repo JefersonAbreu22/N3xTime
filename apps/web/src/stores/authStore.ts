@@ -13,6 +13,7 @@ export type AuthUser = {
   requires_time_tracking?: boolean;
   department_id?: number | null;
   leadership_permissions?: Array<'view_team' | 'manage_team' | 'view_time_records' | 'manage_time_records' | 'approve_requests' | 'view_reports' | 'manage_biometrics'>;
+  available_companies?: Array<{ membershipId: number; companyId: number; userId: number; name: string; slug: string; role: 'admin' | 'manager' | 'employee' }>;
 };
 
 type AuthState = {

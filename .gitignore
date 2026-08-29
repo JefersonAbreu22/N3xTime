@@ -90,3 +90,5 @@ desktop.ini
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnpm-store/
+
+*.patch

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Building2, ExternalLink, LayoutDashboard, Plus, RefreshCw, ShieldAlert, Users, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Building2, DatabaseBackup, ExternalLink, LayoutDashboard, Plus, RefreshCw, ShieldAlert, Upload, Users, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -31,6 +31,9 @@ export default function PlatformCompanies({ embedded = false }: { embedded?: boo
   const [saving, setSaving] = useState(false);
   const [fetchingCnpj, setFetchingCnpj] = useState(false);
   const [accessingCompanyId, setAccessingCompanyId] = useState<number | null>(null);
+  const [transferCompany, setTransferCompany] = useState<PlatformCompany | null>(null);
+  const [transferring, setTransferring] = useState(false);
+  const dumpInputRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<ProvisionCompanyPayload>(emptyForm);
   const user = usePlatformAuthStore((state) => state.user);
   const clearSession = usePlatformAuthStore((state) => state.clearSession);
@@ -182,6 +185,46 @@ export default function PlatformCompanies({ embedded = false }: { embedded?: boo
     }
   };
 
+  const backupCompany = async (company: PlatformCompany) => {
+    try {
+      setTransferring(true);
+      const blob = await platformApi.backupCompany(company.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `n3xtime-${company.slug}-${new Date().toISOString().slice(0, 10)}.sql`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success('Backup do tenant gerado.');
+    } catch {
+      toast.error('Não foi possível gerar o backup.');
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  const chooseDump = (company: PlatformCompany) => {
+    setTransferCompany(company);
+    dumpInputRef.current?.click();
+  };
+
+  const importDump = async (file?: File) => {
+    if (!file || !transferCompany) return;
+    if (!window.confirm(`Importar ${file.name} em ${transferCompany.trade_name || transferCompany.legal_name}? Os dados atuais deste tenant serão substituídos.`)) return;
+    try {
+      setTransferring(true);
+      await platformApi.importCompany(transferCompany.id, file, true);
+      toast.success('Dump importado com sucesso.');
+      await load();
+    } catch (error: unknown) {
+      toast.error((error as { response?: { data?: { error?: string } } }).response?.data?.error || 'Falha na importação do dump.');
+    } finally {
+      setTransferring(false);
+      setTransferCompany(null);
+      if (dumpInputRef.current) dumpInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className={embedded ? 'contents' : 'app-shell flex h-screen overflow-hidden'}>
       {!embedded && <DashboardSidebar
@@ -213,10 +256,11 @@ export default function PlatformCompanies({ embedded = false }: { embedded?: boo
           ))}
         </section>
 
+        <input ref={dumpInputRef} type="file" accept=".sql,application/sql,text/plain" className="hidden" onChange={(event) => void importDump(event.target.files?.[0])} />
         <section className="surface-panel mt-6 overflow-hidden">
           {loading ? <div className="p-10 text-center text-sm text-[#6e6a6a]">Carregando empresas...</div> : companies.length === 0 ? <div className="p-10 text-center text-sm text-[#6e6a6a]">Nenhuma empresa cadastrada.</div> : (
             <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm"><thead className="bg-[#f7f5f5] text-[10px] uppercase tracking-[0.13em] text-[#6e6a6a]"><tr><th className="px-5 py-3">Empresa</th><th className="px-5 py-3">Identificador</th><th className="px-5 py-3">CNPJ</th><th className="px-5 py-3">Usuários</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Ação</th></tr></thead><tbody>
-              {companies.map((company) => <tr key={company.id} className="border-t border-[#ebe8e8]"><td className="px-5 py-4"><div className="flex items-center gap-2"><span className="font-semibold">{company.trade_name || company.legal_name}</span>{company.is_primary && <span className="status-chip border-[#b9dede] bg-[#e4f4f4] text-[#026666]">Empresa principal</span>}</div><div className="mt-1 text-xs text-[#777]">{company.legal_name}</div></td><td className="px-5 py-4 font-mono text-xs">{company.slug}</td><td className="px-5 py-4 text-[#6e6a6a]">{company.cnpj || '—'}</td><td className="px-5 py-4">{company.users_count}</td><td className="px-5 py-4"><span className={`status-chip ${statusClass[company.status]}`}>{statusLabel[company.status]}</span></td><td className="px-5 py-4"><div className="flex items-center justify-end gap-3">{company.status === 'active' && <a className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#026666] hover:underline" href={`/${company.slug}/kiosk`} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5" />Abrir totem</a>}{company.status === 'active' && <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#026666] hover:underline disabled:opacity-50" disabled={accessingCompanyId === company.id} onClick={() => void accessCompany(company)}><ExternalLink className="h-3.5 w-3.5" />{accessingCompanyId === company.id ? 'Acessando...' : 'Acessar empresa'}</button>}{company.is_primary ? <span className="text-xs font-semibold text-[#6e6a6a]" title="A empresa principal deve permanecer ativa">Protegida</span> : company.status === 'active' ? <button className="text-xs font-semibold text-red-700 hover:underline" onClick={() => void changeStatus(company, 'suspended')}>Suspender</button> : <button className="text-xs font-semibold text-[#026666] hover:underline" onClick={() => void changeStatus(company, 'active')}>Reativar</button>}</div></td></tr>)}
+              {companies.map((company) => <tr key={company.id} className="border-t border-[#ebe8e8]"><td className="px-5 py-4"><div className="flex items-center gap-2"><span className="font-semibold">{company.trade_name || company.legal_name}</span>{company.is_primary && <span className="status-chip border-[#b9dede] bg-[#e4f4f4] text-[#026666]">Empresa principal</span>}</div><div className="mt-1 text-xs text-[#777]">{company.legal_name}</div></td><td className="px-5 py-4 font-mono text-xs">{company.slug}</td><td className="px-5 py-4 text-[#6e6a6a]">{company.cnpj || '—'}</td><td className="px-5 py-4">{company.users_count}</td><td className="px-5 py-4"><span className={`status-chip ${statusClass[company.status]}`}>{statusLabel[company.status]}</span></td><td className="px-5 py-4"><div className="flex flex-wrap items-center justify-end gap-3"><button disabled={transferring} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#026666] hover:underline disabled:opacity-50" onClick={() => void backupCompany(company)}><DatabaseBackup className="h-3.5 w-3.5" />Backup</button><button disabled={transferring} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#026666] hover:underline disabled:opacity-50" onClick={() => chooseDump(company)}><Upload className="h-3.5 w-3.5" />Importar dump</button>{company.status === 'active' && <a className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#026666] hover:underline" href={`/${company.slug}/kiosk`} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5" />Abrir totem</a>}{company.status === 'active' && <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#026666] hover:underline disabled:opacity-50" disabled={accessingCompanyId === company.id} onClick={() => void accessCompany(company)}><ExternalLink className="h-3.5 w-3.5" />{accessingCompanyId === company.id ? 'Acessando...' : 'Acessar empresa'}</button>}{company.is_primary ? <span className="text-xs font-semibold text-[#6e6a6a]" title="A empresa principal deve permanecer ativa">Protegida</span> : company.status === 'active' ? <button className="text-xs font-semibold text-red-700 hover:underline" onClick={() => void changeStatus(company, 'suspended')}>Suspender</button> : <button className="text-xs font-semibold text-[#026666] hover:underline" onClick={() => void changeStatus(company, 'active')}>Reativar</button>}</div></td></tr>)}
             </tbody></table></div>
           )}
         </section>

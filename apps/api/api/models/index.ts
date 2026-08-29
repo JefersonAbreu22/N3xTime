@@ -2,10 +2,12 @@ import { sequelize } from '../config/database.js';
 import { configureTenantModel } from '../tenancy/configureTenantModel.js';
 import { guardTenantReference } from '../tenancy/tenantReferenceGuard.js';
 import { AttendanceSummary } from './AttendanceSummary.js';
+import { Account } from './Account.js';
 import { AuditLog } from './AuditLog.js';
 import { BiometricEvent } from './BiometricEvent.js';
 import { BiometricSample } from './BiometricSample.js';
 import { Company } from './Company.js';
+import { CompanyMembership } from './CompanyMembership.js';
 import { CompanyProfile } from './CompanyProfile.js';
 import { Department } from './Department.js';
 import { DepartmentHierarchyLevel } from './DepartmentHierarchyLevel.js';
@@ -20,6 +22,7 @@ import { PlatformAuditLog } from './PlatformAuditLog.js';
 import { PlatformUser } from './PlatformUser.js';
 import { RemotePhotoEvidence } from './RemotePhotoEvidence.js';
 import { TimeRecord } from './TimeRecord.js';
+import { TenantTransferLog } from './TenantTransferLog.js';
 import { User } from './User.js';
 import { WorkSchedule } from './WorkSchedule.js';
 
@@ -28,7 +31,7 @@ configureTenantModel(BiometricEvent);
 configureTenantModel(BiometricSample);
 configureTenantModel(KioskControl, [], true);
 configureTenantModel(WorkSchedule);
-configureTenantModel(User, ['cpf', 'registration_number']);
+configureTenantModel(User, ['cpf', 'registration_number', 'email']);
 configureTenantModel(TimeRecord);
 configureTenantModel(CompanyProfile, [], true);
 configureTenantModel(Holiday, ['holiday_date']);
@@ -97,11 +100,13 @@ export const connectDatabase = async () => {
 };
 
 export {
+  Account,
   AttendanceSummary,
   AuditLog,
   BiometricEvent,
   BiometricSample,
   Company,
+  CompanyMembership,
   CompanyProfile,
   Department,
   DepartmentHierarchyLevel,
@@ -116,6 +121,7 @@ export {
   PlatformUser,
   RemotePhotoEvidence,
   TimeRecord,
+  TenantTransferLog,
   User,
   WorkSchedule,
 };

@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { changePassword, getCurrentSession, login, requestPasswordReset, resetPassword, registerFace, resetFace, getFaces, kioskLogin, getKioskCompany, getKioskStatus, revokeKioskSession, releaseKioskSession, getBiometricSummary, getBiometricHistory } from '../controllers/authController.js';
+import { registerFace, resetFace, getFaces, kioskLogin, getKioskCompany, getKioskStatus, revokeKioskSession, releaseKioskSession, getBiometricSummary, getBiometricHistory } from '../controllers/authController.js';
+import { changeAccountPassword, getAccountCurrentSession, loginWithAccount, requestAccountPasswordReset, resetAccountPassword, selectAccountCompany } from '../controllers/accountAuthController.js';
 import { authenticate, authorize } from '../middlewares/authMiddleware.js';
 import {
   kioskLoginRateLimiter,
@@ -11,11 +12,12 @@ import {
 
 const router = Router();
 
-router.post('/login', loginRateLimiter, login);
-router.get('/me', authenticate, getCurrentSession);
-router.post('/password/forgot', passwordResetRequestLimiter, requestPasswordReset);
-router.post('/password/reset', passwordResetLimiter, resetPassword);
-router.post('/password/change', authenticate, authorize(['admin', 'manager', 'employee']), changePassword);
+router.post('/login', loginRateLimiter, loginWithAccount);
+router.post('/company/select', loginRateLimiter, selectAccountCompany);
+router.get('/me', authenticate, getAccountCurrentSession);
+router.post('/password/forgot', passwordResetRequestLimiter, requestAccountPasswordReset);
+router.post('/password/reset', passwordResetLimiter, resetAccountPassword);
+router.post('/password/change', authenticate, authorize(['admin', 'manager', 'employee']), changeAccountPassword);
 router.get('/kiosk/company/:companySlug', publicLookupRateLimiter, getKioskCompany);
 router.post('/kiosk/login', kioskLoginRateLimiter, kioskLogin);
 router.get('/kiosk/status', authenticate, authorize(['admin', 'kiosk']), getKioskStatus);

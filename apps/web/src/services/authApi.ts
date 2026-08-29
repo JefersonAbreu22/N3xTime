@@ -3,25 +3,36 @@ import { http } from './http';
 const KIOSK_TOKEN_KEY = 'kiosk_token';
 const LEGACY_KIOSK_TOKEN_KEY = 'kiosk_token';
 
+export type AccountCompany = {
+  membershipId: number;
+  companyId: number;
+  userId: number;
+  name: string;
+  slug: string;
+  role: 'admin' | 'manager' | 'employee';
+};
+
+export type SessionUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: 'admin' | 'manager' | 'employee';
+  company: { id: number; slug: string; name: string };
+  must_change_password?: boolean;
+  is_platform_admin?: boolean;
+  is_impersonating?: boolean;
+  remote_clock_in_enabled?: boolean;
+  requires_time_tracking?: boolean;
+  department_id?: number | null;
+  leadership_permissions?: Array<'view_team' | 'manage_team' | 'view_time_records' | 'manage_time_records' | 'approve_requests' | 'view_reports' | 'manage_biometrics'>;
+  available_companies?: AccountCompany[];
+};
+
 export type LoginResponse = {
   success: boolean;
-  data: {
-    token: string;
-    user: {
-      id: number;
-      name: string;
-      email: string;
-      role: 'admin' | 'manager' | 'employee';
-      company: { id: number; slug: string; name: string };
-      must_change_password?: boolean;
-      is_platform_admin?: boolean;
-      is_impersonating?: boolean;
-      remote_clock_in_enabled?: boolean;
-      requires_time_tracking?: boolean;
-      department_id?: number | null;
-      leadership_permissions?: Array<'view_team' | 'manage_team' | 'view_time_records' | 'manage_time_records' | 'approve_requests' | 'view_reports' | 'manage_biometrics'>;
-    };
-  };
+  data:
+    | { token: string; user: SessionUser }
+    | { requires_company_selection: true; selection_token: string; companies: AccountCompany[] };
 };
 
 type KioskLoginResponse = {
@@ -137,8 +148,12 @@ export const authApi = {
     const res = await http.post<LoginResponse>('/auth/login', { email, password });
     return res.data;
   },
+  selectCompany: async (token: string, companyId: number) => {
+    const res = await http.post<LoginResponse>('/auth/company/select', { companyId }, { headers: { Authorization: `Bearer ${token}` } });
+    return res.data;
+  },
   me: async () => {
-    const res = await http.get<Omit<LoginResponse, 'data'> & { data: { user: LoginResponse['data']['user'] } }>('/auth/me');
+    const res = await http.get<{ success: boolean; data: { user: SessionUser } }>('/auth/me');
     return res.data;
   },
   requestPasswordReset: async (email: string) => {

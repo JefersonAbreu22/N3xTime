@@ -7,6 +7,9 @@ export default function DashboardHeader({
   companySlug,
   displayInitials,
   onLogin,
+  companies,
+  currentCompanyId,
+  onCompanyChange,
 }: {
   currentPageTitle: string;
   profileLabel: string;
@@ -14,6 +17,9 @@ export default function DashboardHeader({
   companySlug?: string;
   displayInitials: string;
   onLogin: () => void;
+  companies?: Array<{ companyId: number; name: string }>;
+  currentCompanyId?: number;
+  onCompanyChange?: (companyId: number) => void;
 }) {
   return (
     <header className="border-b border-[#e7e4e4] bg-[#fcfbfb] px-5 py-4 md:px-8">
@@ -28,6 +34,11 @@ export default function DashboardHeader({
         </div>
 
         <div className="flex items-center gap-3 self-start xl:self-auto">
+          {companies && companies.length > 1 && onCompanyChange && (
+            <select className="field-input h-11 min-w-[190px] py-2" value={currentCompanyId} onChange={(event) => onCompanyChange(Number(event.target.value))}>
+              {companies.map((company) => <option key={company.companyId} value={company.companyId}>{company.name}</option>)}
+            </select>
+          )}
           {user ? (
             <>
               {user.role === 'admin' && companySlug && (

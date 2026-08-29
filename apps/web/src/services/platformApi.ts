@@ -78,6 +78,13 @@ export const platformApi = {
   accessCompany: async (id: number) => (await platformHttp.post<{ success: boolean; data: { token: string; user: AuthUser } }>(`/companies/${id}/access`)).data,
   updateCompanyStatus: async (id: number, status: PlatformCompany['status'], reason: string) =>
     (await platformHttp.patch(`/companies/${id}/status`, { status, reason })).data,
+  backupCompany: async (id: number) => (await platformHttp.get<Blob>(`/companies/${id}/backup`, { responseType: 'blob' })).data,
+  importCompany: async (id: number, file: File, replaceExisting = true) => {
+    const form = new FormData();
+    form.append('dump', file);
+    form.append('replaceExisting', String(replaceExisting));
+    return (await platformHttp.post(`/companies/${id}/import`, form, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+  },
   listLogs: async (params: PlatformLogFilters = {}) => (await platformHttp.get<{
     success: boolean;
     data: { items: PlatformLog[]; pagination: { page: number; limit: number; total: number; pages: number } };

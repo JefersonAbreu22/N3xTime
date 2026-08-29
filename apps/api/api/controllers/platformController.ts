@@ -9,8 +9,7 @@ import { Company, CompanyProfile, KioskControl, PlatformAuditLog, PlatformUser, 
 import { runWithTenant, runWithoutTenant } from '../tenancy/tenantContext.js';
 import { passwordSchema } from '../validation/passwordPolicy.js';
 import { fingerprintKioskKey } from '../utils/kioskKey.js';
-
-const getJwtSecret = () => process.env.JWT_SECRET || 'supersecret';
+import { getJwtSecret } from '../config/security.js';
 
 const createPlatformSession = (user: PlatformUser) => ({
   token: jwt.sign(
@@ -313,13 +312,6 @@ export const provisionCompany = async (req: AuthRequest, res: Response) => {
 
   try {
     const payload = parsed.data;
-    const existingAdminEmail = await runWithoutTenant(() => User.findOne({
-      where: { email: payload.admin.email },
-      attributes: ['id'],
-    }));
-    if (existingAdminEmail) {
-      return res.status(409).json({ success: false, error: 'O e-mail do administrador já está vinculado a outra empresa.' });
-    }
     const kioskKeyFingerprint = fingerprintKioskKey(payload.kiosk_access_key);
     const existingKioskKey = await Company.findOne({ where: { kiosk_access_key_fingerprint: kioskKeyFingerprint } });
     if (existingKioskKey) {

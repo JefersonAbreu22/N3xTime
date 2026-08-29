@@ -205,7 +205,7 @@ model User {
   name                          String                       @db.VarChar(255)
   cpf                           String                       @db.VarChar(14)
   registration_number           String                       @db.VarChar(50)
-  email                         String                       @unique(map: "users_email_unique") @db.VarChar(255)
+  email                         String                       @db.VarChar(255)
   password_hash                 String                       @db.VarChar(255)
   role                          UserRole
   work_type                     WorkType
@@ -244,6 +244,7 @@ model User {
 
   @@unique([company_id, cpf], map: "users_company_id_cpf")
   @@unique([company_id, registration_number], map: "users_company_id_registration_number")
+  @@unique([company_id, email], map: "users_company_id_email")
   @@index([company_id], map: "users_company_id")
   @@map("users")
 }
@@ -579,4 +580,47 @@ model TimeRecord {
 
   @@index([company_id], map: "time_records_company_id")
   @@map("time_records")
+}
+
+model Account {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.VarChar(255)
+  email         String   @unique(map: "accounts_email_unique") @db.VarChar(255)
+  password_hash String   @db.VarChar(255)
+  status        String   @default("active") @db.VarChar(20)
+  created_at    DateTime @db.DateTime(0)
+  updated_at    DateTime @db.DateTime(0)
+
+  @@map("accounts")
+}
+
+model CompanyMembership {
+  id         Int      @id @default(autoincrement())
+  account_id Int
+  company_id Int
+  user_id    Int      @unique(map: "company_memberships_user_unique")
+  status     String   @default("active") @db.VarChar(20)
+  created_at DateTime @db.DateTime(0)
+  updated_at DateTime @db.DateTime(0)
+
+  @@unique([account_id, company_id], map: "company_memberships_account_company")
+  @@index([company_id], map: "company_memberships_company_id")
+  @@map("company_memberships")
+}
+
+model TenantTransferLog {
+  id               Int       @id @default(autoincrement())
+  company_id       Int
+  platform_user_id Int
+  operation        String    @db.VarChar(20)
+  filename         String    @db.VarChar(255)
+  status           String    @db.VarChar(20)
+  rows_processed   Int       @default(0)
+  details          String?   @db.LongText
+  error_message    String?   @db.Text
+  created_at       DateTime  @db.DateTime(0)
+  finished_at      DateTime? @db.DateTime(0)
+
+  @@index([company_id, created_at], map: "tenant_transfer_logs_company_created")
+  @@map("tenant_transfer_logs")
 }

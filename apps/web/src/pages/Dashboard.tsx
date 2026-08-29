@@ -78,6 +78,18 @@ export default function Dashboard() {
     navigate('/dashboard/platform');
   };
 
+  const switchCompany = async (companyId: number) => {
+    if (!auth.token || companyId === auth.user?.company.id) return;
+    try {
+      const response = await authApi.selectCompany(auth.token, companyId);
+      if ('requires_company_selection' in response.data) return;
+      setSession(response.data.token, response.data.user);
+      navigate('/dashboard');
+    } catch {
+      // The HTTP interceptor or the next authenticated request will surface session errors.
+    }
+  };
+
   return (
     <div className="app-shell flex h-screen overflow-hidden">
       <DashboardSidebar navSections={navSections} pathname={location.pathname} user={auth.user} onLogout={handleLogout} />
@@ -90,6 +102,9 @@ export default function Dashboard() {
           companySlug={auth.user?.company.slug}
           displayInitials={displayInitials}
           onLogin={() => navigate('/login')}
+          companies={auth.user?.available_companies}
+          currentCompanyId={auth.user?.company.id}
+          onCompanyChange={(companyId) => void switchCompany(companyId)}
         />
 
         {auth.user?.is_impersonating && (

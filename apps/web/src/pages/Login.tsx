@@ -3,13 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Fingerprint, Lock, Mail, ShieldCheck, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Logo from '../components/Logo';
-import { authApi } from '../services/authApi';
+import { authApi, type AccountCompany } from '../services/authApi';
 import { useAuthStore } from '../stores/authStore';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [companySelection, setCompanySelection] = useState<{ token: string; companies: AccountCompany[] } | null>(null);
   const navigate = useNavigate();
   const setSession = useAuthStore(s => s.setSession);
 
@@ -23,6 +24,10 @@ export default function Login() {
     try {
       setIsLoading(true);
       const response = await authApi.login(email, password);
+      if ('requires_company_selection' in response.data) {
+        setCompanySelection({ token: response.data.selection_token, companies: response.data.companies });
+        return;
+      }
       setSession(response.data.token, response.data.user);
       toast.success('Login efetuado com sucesso!');
       navigate(response.data.user.must_change_password
@@ -37,6 +42,22 @@ export default function Login() {
         return;
       }
       toast.error('Credenciais inválidas.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const selectCompany = async (company: AccountCompany) => {
+    if (!companySelection) return;
+    try {
+      setIsLoading(true);
+      const response = await authApi.selectCompany(companySelection.token, company.companyId);
+      if ('requires_company_selection' in response.data) return;
+      setSession(response.data.token, response.data.user);
+      toast.success(`Acessando ${company.name}.`);
+      navigate(response.data.user.must_change_password ? '/change-password' : '/dashboard');
+    } catch {
+      toast.error('Não foi possível acessar esta empresa.');
     } finally {
       setIsLoading(false);
     }
@@ -96,7 +117,17 @@ export default function Login() {
               </p>
             </div>
 
-            <form className="space-y-5" onSubmit={handleLogin}>
+            {companySelection ? (
+              <div className="space-y-3">
+                <p className="text-sm text-[#6e6a6a]">Sua conta possui acesso a mais de uma empresa. Escolha o ambiente:</p>
+                {companySelection.companies.map((company) => (
+                  <button key={company.membershipId} type="button" className="btn-secondary w-full justify-between" onClick={() => void selectCompany(company)} disabled={isLoading}>
+                    <span>{company.name}</span><span className="text-xs uppercase">{company.role}</span>
+                  </button>
+                ))}
+                <button type="button" className="btn-ghost w-full" onClick={() => setCompanySelection(null)}>Voltar</button>
+              </div>
+            ) : <form className="space-y-5" onSubmit={handleLogin}>
               <div>
                 <label className="field-label">Email Corporativo</label>
                 <div className="relative">
@@ -144,7 +175,7 @@ export default function Login() {
                 {isLoading ? 'Validando acesso...' : 'Entrar no Painel'}
                 {!isLoading && <ArrowRight className="h-4 w-4" />}
               </button>
-            </form>
+            </form>}
 
             <div className="mt-8 border-t border-[#e7e4e4] pt-5 text-xs uppercase tracking-[0.18em] text-[#8b8686]">
               Portal de RH, lideranca e colaboradores

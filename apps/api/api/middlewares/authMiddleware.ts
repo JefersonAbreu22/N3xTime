@@ -10,6 +10,8 @@ import { getJwtSecret } from '../config/security.js';
 export interface AuthRequest extends Request {
   user?: {
     id: number;
+    accountId?: number;
+    membershipId?: number;
     role: string;
     companyId: number | null;
     scope?: 'tenant' | 'kiosk' | 'platform';
@@ -38,7 +40,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
   try {
     const decoded = jwt.verify(token, getJwtSecret(), {
       algorithms: ['HS256'],
-    }) as { id: number; role: string; scope?: 'tenant' | 'kiosk' | 'platform'; companyId?: number; kioskVersion?: number; impersonatedBy?: number };
+    }) as { id: number; accountId?: number; membershipId?: number; role: string; scope?: 'tenant' | 'kiosk' | 'platform'; companyId?: number; kioskVersion?: number; impersonatedBy?: number };
     if (decoded.role === 'platform_admin' && decoded.scope === 'platform') {
       const platformUser = await PlatformUser.findOne({ where: { id: decoded.id, status: 'active' } });
       if (!platformUser) {
