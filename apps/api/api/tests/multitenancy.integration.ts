@@ -490,6 +490,91 @@ try {
     assert(ids.includes(companyA.id));
     assert(ids.includes(companyB.id));
   });
+  await run('provisionamento não cria admin e o painel permite cadastrar e editar o acesso', async () => {
+    const provisioned = await api('/api/platform/companies', {
+      token: platformToken,
+      body: {
+        legal_name: 'Tenant Gama Ltda',
+        trade_name: 'Tenant Gama',
+        slug: 'tenant-gama',
+        cnpj: '33.333.333/0001-33',
+        email: 'contato@tenant-gama.local',
+        phone: '(11) 3333-3333',
+        address_line: 'Rua do Teste, 33',
+        city: 'São Paulo',
+        state: 'SP',
+        zip_code: '03333-333',
+        kiosk_access_key: 'tenant-gama-kiosk-key-2026',
+      },
+    });
+    assert.equal(provisioned.status, 201);
+    const companyId = provisioned.body.data.id;
+
+    const adminsBefore = await api(`/api/platform/companies/${companyId}/admins`, { token: platformToken });
+    assert.equal(adminsBefore.status, 200);
+    assert.deepEqual(adminsBefore.body.data, []);
+    assert.equal((await api(`/api/platform/companies/${companyId}/access`, {
+      token: platformToken,
+      method: 'POST',
+    })).status, 409);
+
+    const updatedCompany = await api(`/api/platform/companies/${companyId}`, {
+      token: platformToken,
+      method: 'PATCH',
+      body: {
+        legal_name: 'Tenant Gama Serviços Ltda',
+        trade_name: 'Tenant Gama Atualizada',
+        slug: 'tenant-gama',
+        cnpj: '33.333.333/0001-33',
+        email: 'novo-contato@tenant-gama.local',
+        phone: '(11) 3333-4444',
+        address_line: 'Rua do Teste, 44',
+        city: 'São Paulo',
+        state: 'SP',
+        zip_code: '04444-444',
+      },
+    });
+    assert.equal(updatedCompany.status, 200);
+    assert.equal(updatedCompany.body.data.trade_name, 'Tenant Gama Atualizada');
+
+    const createdAdmin = await api(`/api/platform/companies/${companyId}/admins`, {
+      token: platformToken,
+      body: {
+        name: 'Admin Tenant Gama',
+        email: 'admin@tenant-gama.local',
+        password,
+        cpf: '33333333333',
+        registration_number: 'ADM-GAMA-1',
+      },
+    });
+    assert.equal(createdAdmin.status, 201);
+
+    const updatedAdmin = await api(`/api/platform/companies/${companyId}/admins/${createdAdmin.body.data.id}`, {
+      token: platformToken,
+      method: 'PUT',
+      body: {
+        name: 'Administrador Tenant Gama',
+        email: 'admin@tenant-gama.local',
+        password: '',
+        cpf: '33333333333',
+        registration_number: 'ADM-GAMA-1',
+        status: 'active',
+      },
+    });
+    assert.equal(updatedAdmin.status, 200);
+
+    const adminsAfter = await api(`/api/platform/companies/${companyId}/admins`, { token: platformToken });
+    assert.equal(adminsAfter.status, 200);
+    assert.equal(adminsAfter.body.data.length, 1);
+    assert.equal(adminsAfter.body.data[0].name, 'Administrador Tenant Gama');
+
+    const access = await api(`/api/platform/companies/${companyId}/access`, {
+      token: platformToken,
+      method: 'POST',
+    });
+    assert.equal(access.status, 200);
+    assert.equal(access.body.data.user.company.id, companyId);
+  });
   await run('acesso explícito do Super Admin cria sessão do tenant escolhido', async () => {
     const response = await api(`/api/platform/companies/${companyB.id}/access`, { token: platformToken, method: 'POST' });
     assert.equal(response.status, 200);

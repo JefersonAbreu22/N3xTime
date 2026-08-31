@@ -18,13 +18,21 @@ export type PlatformCompany = {
   trade_name: string | null;
   slug: string;
   cnpj: string | null;
+  email: string | null;
+  phone: string | null;
+  address_line: string | null;
+  city: string | null;
+  state: string | null;
+  zip_code: string | null;
   status: 'active' | 'inactive' | 'suspended';
   users_count: number;
+  admins_count: number;
+  active_admins_count: number;
   is_primary: boolean;
   created_at: string;
 };
 
-export type ProvisionCompanyPayload = {
+export type CompanyDetailsPayload = {
   legal_name: string;
   trade_name?: string;
   slug: string;
@@ -35,8 +43,30 @@ export type ProvisionCompanyPayload = {
   city?: string;
   state?: string;
   zip_code?: string;
+};
+
+export type ProvisionCompanyPayload = CompanyDetailsPayload & {
   kiosk_access_key: string;
-  admin: { name: string; email: string; password: string; cpf: string; registration_number: string };
+};
+
+export type CompanyAdmin = {
+  id: number;
+  name: string;
+  email: string;
+  cpf: string;
+  registration_number: string;
+  status: 'active' | 'inactive';
+  must_change_password: boolean;
+  created_at: string;
+};
+
+export type CompanyAdminPayload = {
+  name: string;
+  email: string;
+  cpf: string;
+  registration_number: string;
+  password: string;
+  status?: 'active' | 'inactive';
 };
 
 export type PlatformLogCategory = 'platform' | 'audit' | 'biometric' | 'clock' | 'request' | 'email';
@@ -75,6 +105,13 @@ export const platformApi = {
   },
   listCompanies: async () => (await platformHttp.get<{ success: boolean; data: PlatformCompany[] }>('/companies')).data,
   provisionCompany: async (payload: ProvisionCompanyPayload) => (await platformHttp.post('/companies', payload)).data,
+  updateCompany: async (id: number, payload: CompanyDetailsPayload) => (await platformHttp.patch(`/companies/${id}`, payload)).data,
+  listCompanyAdmins: async (id: number) =>
+    (await platformHttp.get<{ success: boolean; data: CompanyAdmin[] }>(`/companies/${id}/admins`)).data,
+  createCompanyAdmin: async (id: number, payload: CompanyAdminPayload) =>
+    (await platformHttp.post<{ success: boolean; message: string; data: CompanyAdmin }>(`/companies/${id}/admins`, payload)).data,
+  updateCompanyAdmin: async (id: number, userId: number, payload: CompanyAdminPayload & { status: 'active' | 'inactive' }) =>
+    (await platformHttp.put<{ success: boolean; message: string; data?: CompanyAdmin }>(`/companies/${id}/admins/${userId}`, payload)).data,
   accessCompany: async (id: number) => (await platformHttp.post<{ success: boolean; data: { token: string; user: AuthUser } }>(`/companies/${id}/access`)).data,
   updateCompanyStatus: async (id: number, status: PlatformCompany['status'], reason: string) =>
     (await platformHttp.patch(`/companies/${id}/status`, { status, reason })).data,

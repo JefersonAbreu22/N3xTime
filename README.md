@@ -12,7 +12,7 @@ O N3xTime é uma plataforma SaaS multitenant para gestão de ponto, pessoas e ro
 - solicitações de ajuste, abono, folga e férias com fluxo de aprovação;
 - banco de horas, espelho de ponto, indicadores e fechamento mensal;
 - histórico biométrico, auditoria e acompanhamento de falhas de e-mail;
-- painel Super Admin para provisionar, suspender, acessar, importar e exportar empresas;
+- painel Super Admin para criar e editar empresas, gerenciar administradores, suspender, acessar, importar e exportar tenants;
 - uma conta global pode possuir vínculo com mais de uma empresa.
 
 ## Perfis de acesso
@@ -26,6 +26,19 @@ O N3xTime é uma plataforma SaaS multitenant para gestão de ponto, pessoas e ro
 | Quiosque | Registra ponto dos colaboradores da empresa vinculada à chave do terminal. |
 
 Os dados operacionais possuem `company_id` e são filtrados pelo tenant presente na sessão. O cliente não escolhe livremente esse identificador.
+
+## Entrada de uma empresa
+
+O cadastro da empresa cria somente o tenant, o perfil e o quiosque. O administrador não é criado automaticamente, evitando que uma importação com substituição apague uma credencial recém-cadastrada.
+
+O fluxo recomendado no painel Super Admin é:
+
+1. cadastrar a empresa;
+2. importar o dump, caso exista;
+3. conferir os administradores trazidos pelo dump;
+4. cadastrar um administrador no painel somente quando o dump não possuir um usuário válido.
+
+Enquanto não houver administrador ativo, o acesso operacional à empresa permanece indisponível para o Super Admin.
 
 ## Arquitetura
 

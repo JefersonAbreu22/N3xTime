@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { Op, QueryTypes, Transaction } from 'sequelize';
+import { Op, QueryTypes, Transaction, UniqueConstraintError } from 'sequelize';
 import { z } from 'zod';
 import { sequelize } from '../config/database.js';
 import { AuthRequest } from '../middlewares/authMiddleware.js';
@@ -32,7 +32,7 @@ const slugSchema = z.string().trim().min(2).max(80)
 
 const nullableText = (max: number) => z.string().trim().max(max).optional().nullable();
 
-const provisionCompanySchema = z.object({
+const companyDetailsSchema = z.object({
   legal_name: z.string().trim().min(2).max(255),
   trade_name: nullableText(255),
   slug: slugSchema,
@@ -43,14 +43,23 @@ const provisionCompanySchema = z.object({
   city: nullableText(120),
   state: nullableText(80),
   zip_code: nullableText(20),
-  admin: z.object({
-    name: z.string().trim().min(2).max(255),
-    email: z.string().trim().email().max(255).transform((value) => value.toLowerCase()),
-    password: passwordSchema,
-    cpf: z.string().trim().min(11).max(14),
-    registration_number: z.string().trim().min(1).max(50),
-  }),
+});
+
+const provisionCompanySchema = companyDetailsSchema.extend({
   kiosk_access_key: z.string().trim().min(12).max(200),
+});
+
+const companyAdminSchema = z.object({
+  name: z.string().trim().min(2).max(255),
+  email: z.string().trim().email().max(255).transform((value) => value.toLowerCase()),
+  password: passwordSchema,
+  cpf: z.string().trim().min(11).max(14),
+  registration_number: z.string().trim().min(1).max(50),
+});
+
+const updateCompanyAdminSchema = companyAdminSchema.omit({ password: true }).extend({
+  password: passwordSchema.optional().or(z.literal('')),
+  status: z.enum(['active', 'inactive']),
 });
 
 const writePlatformAudit = async (
@@ -105,7 +114,7 @@ export const bootstrapPlatformSession = async (req: AuthRequest, res: Response) 
 
 export const listCompanies = async (_req: AuthRequest, res: Response) => {
   try {
-    const [companies, primaryCompany, userCounts] = await Promise.all([
+    const [companies, primaryCompany, userCounts, profiles, admins] = await Promise.all([
       Company.findAll({ order: [['created_at', 'DESC'], ['id', 'DESC']] }),
       getPrimaryCompany(),
       runWithoutTenant(() => User.findAll({
@@ -113,22 +122,59 @@ export const listCompanies = async (_req: AuthRequest, res: Response) => {
         group: ['company_id'],
         raw: true,
       })) as unknown as Promise<Array<{ company_id: number; total: string | number }>>,
+      runWithoutTenant(() => CompanyProfile.findAll({
+        attributes: ['company_id', 'email', 'phone', 'address_line', 'city', 'state', 'zip_code'],
+        raw: true,
+      })) as unknown as Promise<Array<{
+        company_id: number;
+        email: string | null;
+        phone: string | null;
+        address_line: string | null;
+        city: string | null;
+        state: string | null;
+        zip_code: string | null;
+      }>>,
+      runWithoutTenant(() => User.findAll({
+        where: { role: 'admin' },
+        attributes: ['company_id', 'status'],
+        raw: true,
+      })) as unknown as Promise<Array<{ company_id: number; status: 'active' | 'inactive' }>>,
     ]);
     const countMap = new Map(userCounts.map((row) => [Number(row.company_id), Number(row.total)]));
+    const profileMap = new Map(profiles.map((profile) => [Number(profile.company_id), profile]));
+    const adminCountMap = new Map<number, { total: number; active: number }>();
+    for (const admin of admins) {
+      const current = adminCountMap.get(Number(admin.company_id)) ?? { total: 0, active: 0 };
+      current.total += 1;
+      if (admin.status === 'active') current.active += 1;
+      adminCountMap.set(Number(admin.company_id), current);
+    }
 
     return res.json({
       success: true,
-      data: companies.map((company) => ({
-        id: company.id,
-        legal_name: company.legal_name,
-        trade_name: company.trade_name,
-        slug: company.slug,
-        cnpj: company.cnpj,
-        status: company.status,
-        users_count: countMap.get(company.id) ?? 0,
-        is_primary: company.id === primaryCompany?.id,
-        created_at: company.created_at,
-      })),
+      data: companies.map((company) => {
+        const profile = profileMap.get(company.id);
+        const adminCounts = adminCountMap.get(company.id) ?? { total: 0, active: 0 };
+        return {
+          id: company.id,
+          legal_name: company.legal_name,
+          trade_name: company.trade_name,
+          slug: company.slug,
+          cnpj: company.cnpj,
+          email: profile?.email ?? null,
+          phone: profile?.phone ?? null,
+          address_line: profile?.address_line ?? null,
+          city: profile?.city ?? null,
+          state: profile?.state ?? null,
+          zip_code: profile?.zip_code ?? null,
+          status: company.status,
+          users_count: countMap.get(company.id) ?? 0,
+          admins_count: adminCounts.total,
+          active_admins_count: adminCounts.active,
+          is_primary: company.id === primaryCompany?.id,
+          created_at: company.created_at,
+        };
+      }),
     });
   } catch (error) {
     console.error('List platform companies error:', error);
@@ -327,12 +373,6 @@ export const provisionCompany = async (req: AuthRequest, res: Response) => {
     });
     if (duplicate) return res.status(409).json({ success: false, error: 'Slug ou CNPJ já cadastrado.' });
 
-    const existingAccount = await Account.findOne({ where: { email: payload.admin.email } });
-    if (existingAccount && existingAccount.status !== 'active') {
-      return res.status(409).json({ success: false, error: 'A conta global do administrador está inativa.' });
-    }
-    const adminPasswordHash = existingAccount?.password_hash ?? await bcrypt.hash(payload.admin.password, 12);
-
     const company = await sequelize.transaction(async (transaction) => {
       const createdCompany = await Company.create({
         legal_name: payload.legal_name,
@@ -357,46 +397,315 @@ export const provisionCompany = async (req: AuthRequest, res: Response) => {
           zip_code: payload.zip_code || null,
         }, { transaction });
         await KioskControl.create({ session_version: 1, terminal_enabled: false }, { transaction });
-        const account = existingAccount ?? await Account.create({
-          name: payload.admin.name,
-          email: payload.admin.email,
-          password_hash: adminPasswordHash,
-          status: 'active',
-        }, { transaction });
-        const adminUser = await User.create({
-          name: payload.admin.name,
-          cpf: payload.admin.cpf,
-          registration_number: payload.admin.registration_number,
-          email: payload.admin.email,
-          password_hash: adminPasswordHash,
-          role: 'admin',
-          work_type: 'presential',
-          status: 'active',
-          must_change_password: !existingAccount,
-        }, { transaction });
-        await CompanyMembership.create({
-          account_id: account.id,
-          company_id: createdCompany.id,
-          user_id: adminUser.id,
-          status: 'active',
-        }, { transaction });
       });
 
       await writePlatformAudit(req, 'company.provisioned', createdCompany.id, {
         slug: createdCompany.slug,
-        admin_email: payload.admin.email,
       }, transaction);
       return createdCompany;
     });
 
     return res.status(201).json({
       success: true,
-      message: 'Empresa e administrador provisionados com sucesso.',
+      message: 'Empresa provisionada. Importe o dump ou cadastre um administrador para liberar o acesso.',
       data: { id: company.id, slug: company.slug, status: company.status },
     });
   } catch (error) {
     console.error('Provision company error:', error);
     return res.status(500).json({ success: false, error: 'Não foi possível provisionar a empresa.' });
+  }
+};
+
+export const updateCompany = async (req: AuthRequest, res: Response) => {
+  const companyId = Number(req.params.id);
+  const parsed = companyDetailsSchema.safeParse(req.body);
+  if (!Number.isInteger(companyId) || companyId <= 0 || !parsed.success) {
+    return res.status(400).json({ success: false, error: 'Dados da empresa inválidos.' });
+  }
+
+  try {
+    const company = await Company.findByPk(companyId);
+    if (!company) return res.status(404).json({ success: false, error: 'Empresa não encontrada.' });
+
+    const duplicate = await Company.findOne({
+      where: {
+        id: { [Op.ne]: companyId },
+        [Op.or]: [
+          { slug: parsed.data.slug },
+          ...(parsed.data.cnpj ? [{ cnpj: parsed.data.cnpj }] : []),
+        ],
+      },
+    });
+    if (duplicate) return res.status(409).json({ success: false, error: 'Slug ou CNPJ já cadastrado.' });
+
+    const oldValue = {
+      legal_name: company.legal_name,
+      trade_name: company.trade_name,
+      slug: company.slug,
+      cnpj: company.cnpj,
+    };
+
+    await sequelize.transaction(async (transaction) => {
+      await company.update({
+        legal_name: parsed.data.legal_name,
+        trade_name: parsed.data.trade_name || null,
+        slug: parsed.data.slug,
+        cnpj: parsed.data.cnpj || null,
+      }, { transaction });
+
+      await runWithTenant(companyId, async () => {
+        const [profile] = await CompanyProfile.findOrCreate({
+          where: {},
+          defaults: {
+            legal_name: parsed.data.legal_name,
+            trade_name: parsed.data.trade_name || null,
+            cnpj: parsed.data.cnpj || null,
+          },
+          transaction,
+        });
+        await profile.update({
+          legal_name: parsed.data.legal_name,
+          trade_name: parsed.data.trade_name || null,
+          cnpj: parsed.data.cnpj || null,
+          email: parsed.data.email || null,
+          phone: parsed.data.phone || null,
+          address_line: parsed.data.address_line || null,
+          city: parsed.data.city || null,
+          state: parsed.data.state || null,
+          zip_code: parsed.data.zip_code || null,
+        }, { transaction });
+      });
+
+      await writePlatformAudit(req, 'company.updated', companyId, {
+        old: oldValue,
+        current: parsed.data,
+      }, transaction);
+    });
+
+    return res.json({
+      success: true,
+      message: 'Empresa atualizada com sucesso.',
+      data: {
+        id: company.id,
+        status: company.status,
+        ...parsed.data,
+      },
+    });
+  } catch (error) {
+    console.error('Update company error:', error);
+    if (error instanceof UniqueConstraintError) {
+      return res.status(409).json({ success: false, error: 'Slug ou CNPJ já cadastrado.' });
+    }
+    return res.status(500).json({ success: false, error: 'Não foi possível atualizar a empresa.' });
+  }
+};
+
+export const listCompanyAdmins = async (req: AuthRequest, res: Response) => {
+  const companyId = Number(req.params.id);
+  if (!Number.isInteger(companyId) || companyId <= 0) {
+    return res.status(400).json({ success: false, error: 'Empresa inválida.' });
+  }
+
+  const company = await Company.findByPk(companyId, { attributes: ['id'] });
+  if (!company) return res.status(404).json({ success: false, error: 'Empresa não encontrada.' });
+
+  const admins = await runWithTenant(companyId, () => User.findAll({
+    where: { role: 'admin' },
+    attributes: ['id', 'name', 'email', 'cpf', 'registration_number', 'status', 'must_change_password', 'created_at'],
+    order: [['status', 'ASC'], ['created_at', 'ASC']],
+  }));
+
+  return res.json({ success: true, data: admins });
+};
+
+export const createCompanyAdmin = async (req: AuthRequest, res: Response) => {
+  const companyId = Number(req.params.id);
+  const parsed = companyAdminSchema.safeParse(req.body);
+  if (!Number.isInteger(companyId) || companyId <= 0 || !parsed.success) {
+    return res.status(400).json({ success: false, error: 'Dados do administrador inválidos.' });
+  }
+
+  try {
+    const company = await Company.findByPk(companyId);
+    if (!company) return res.status(404).json({ success: false, error: 'Empresa não encontrada.' });
+
+    const duplicateUser = await runWithTenant(companyId, () => User.findOne({
+      where: {
+        [Op.or]: [
+          { email: parsed.data.email },
+          { cpf: parsed.data.cpf },
+          { registration_number: parsed.data.registration_number },
+        ],
+      },
+      attributes: ['id'],
+    }));
+    if (duplicateUser) {
+      return res.status(409).json({ success: false, error: 'Já existe um usuário nesta empresa com o mesmo e-mail, CPF ou matrícula.' });
+    }
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const existingAccount = await Account.findOne({ where: { email: parsed.data.email }, transaction });
+      if (existingAccount && existingAccount.status !== 'active') {
+        throw Object.assign(new Error('A conta global vinculada a este e-mail está inativa.'), { statusCode: 409 });
+      }
+      if (existingAccount && await CompanyMembership.count({
+        where: { account_id: existingAccount.id, company_id: companyId },
+        transaction,
+      })) {
+        throw Object.assign(new Error('Esta conta já possui vínculo com a empresa.'), { statusCode: 409 });
+      }
+
+      const passwordHash = existingAccount?.password_hash ?? await bcrypt.hash(parsed.data.password, 12);
+      const account = existingAccount ?? await Account.create({
+        name: parsed.data.name,
+        email: parsed.data.email,
+        password_hash: passwordHash,
+        status: 'active',
+      }, { transaction });
+
+      const admin = await runWithTenant(companyId, () => User.create({
+        name: parsed.data.name,
+        cpf: parsed.data.cpf,
+        registration_number: parsed.data.registration_number,
+        email: parsed.data.email,
+        password_hash: passwordHash,
+        role: 'admin',
+        work_type: 'presential',
+        department_id: null,
+        manager_id: null,
+        schedule_id: null,
+        status: 'active',
+        requires_time_tracking: false,
+        must_change_password: !existingAccount,
+      }, { transaction }));
+
+      await CompanyMembership.create({
+        account_id: account.id,
+        company_id: companyId,
+        user_id: admin.id,
+        status: 'active',
+      }, { transaction });
+
+      await writePlatformAudit(req, 'company.admin_created', companyId, {
+        admin_id: admin.id,
+        admin_email: admin.email,
+        reused_account: Boolean(existingAccount),
+      }, transaction);
+
+      return { admin, reusedAccount: Boolean(existingAccount) };
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: result.reusedAccount
+        ? 'Administrador vinculado usando a senha da conta global existente.'
+        : 'Administrador criado com sucesso.',
+      data: result.admin,
+    });
+  } catch (error) {
+    console.error('Create company admin error:', error);
+    const statusCode = Number((error as { statusCode?: number }).statusCode);
+    if (statusCode >= 400 && statusCode < 500) {
+      return res.status(statusCode).json({ success: false, error: (error as Error).message });
+    }
+    if (error instanceof UniqueConstraintError) {
+      return res.status(409).json({ success: false, error: 'E-mail, CPF ou matrícula já cadastrado.' });
+    }
+    return res.status(500).json({ success: false, error: 'Não foi possível criar o administrador.' });
+  }
+};
+
+export const updateCompanyAdmin = async (req: AuthRequest, res: Response) => {
+  const companyId = Number(req.params.id);
+  const adminId = Number(req.params.userId);
+  const parsed = updateCompanyAdminSchema.safeParse(req.body);
+  if (!Number.isInteger(companyId) || companyId <= 0 || !Number.isInteger(adminId) || adminId <= 0 || !parsed.success) {
+    return res.status(400).json({ success: false, error: 'Dados do administrador inválidos.' });
+  }
+
+  try {
+    const company = await Company.findByPk(companyId, { attributes: ['id'] });
+    if (!company) return res.status(404).json({ success: false, error: 'Empresa não encontrada.' });
+
+    const admin = await runWithTenant(companyId, () => User.findOne({ where: { id: adminId, role: 'admin' } }));
+    if (!admin) return res.status(404).json({ success: false, error: 'Administrador não encontrado nesta empresa.' });
+
+    const duplicateUser = await runWithTenant(companyId, () => User.findOne({
+      where: {
+        id: { [Op.ne]: adminId },
+        [Op.or]: [
+          { email: parsed.data.email },
+          { cpf: parsed.data.cpf },
+          { registration_number: parsed.data.registration_number },
+        ],
+      },
+      attributes: ['id'],
+    }));
+    if (duplicateUser) {
+      return res.status(409).json({ success: false, error: 'Já existe outro usuário nesta empresa com o mesmo e-mail, CPF ou matrícula.' });
+    }
+
+    const membership = await CompanyMembership.findOne({ where: { company_id: companyId, user_id: adminId } });
+    if (!membership) return res.status(409).json({ success: false, error: 'O administrador não possui vínculo global válido.' });
+    const account = await Account.findByPk(membership.account_id);
+    if (!account) return res.status(409).json({ success: false, error: 'A conta global do administrador não foi encontrada.' });
+
+    const emailChanged = parsed.data.email !== account.email.toLowerCase();
+    const passwordChanged = Boolean(parsed.data.password);
+    const membershipCount = await CompanyMembership.count({ where: { account_id: account.id } });
+    if (membershipCount > 1 && (emailChanged || passwordChanged)) {
+      return res.status(409).json({
+        success: false,
+        error: 'E-mail e senha de uma conta vinculada a várias empresas devem ser alterados pelo próprio usuário.',
+      });
+    }
+    if (emailChanged && await Account.count({ where: { email: parsed.data.email, id: { [Op.ne]: account.id } } })) {
+      return res.status(409).json({ success: false, error: 'Já existe uma conta global com este e-mail.' });
+    }
+
+    const oldValue = { name: admin.name, email: admin.email, status: admin.status };
+    await sequelize.transaction(async (transaction) => {
+      let passwordHash = admin.password_hash;
+      if (passwordChanged) passwordHash = await bcrypt.hash(parsed.data.password!, 12);
+
+      await account.update({
+        name: membershipCount === 1 ? parsed.data.name : account.name,
+        email: emailChanged ? parsed.data.email : account.email,
+        password_hash: passwordChanged ? passwordHash : account.password_hash,
+        status: membershipCount === 1 ? parsed.data.status : account.status,
+      }, { transaction });
+
+      await runWithTenant(companyId, () => admin.update({
+        name: parsed.data.name,
+        email: parsed.data.email,
+        cpf: parsed.data.cpf,
+        registration_number: parsed.data.registration_number,
+        password_hash: passwordHash,
+        status: parsed.data.status,
+        department_id: null,
+        manager_id: null,
+        requires_time_tracking: false,
+        remote_clock_in_enabled: false,
+        remote_clock_in_justification: null,
+        must_change_password: passwordChanged ? true : admin.must_change_password,
+      }, { transaction }));
+
+      await membership.update({ status: parsed.data.status }, { transaction });
+      await writePlatformAudit(req, 'company.admin_updated', companyId, {
+        admin_id: admin.id,
+        old: oldValue,
+        current: { name: parsed.data.name, email: parsed.data.email, status: parsed.data.status },
+        password_reset: passwordChanged,
+      }, transaction);
+    });
+
+    return res.json({ success: true, message: 'Administrador atualizado com sucesso.' });
+  } catch (error) {
+    console.error('Update company admin error:', error);
+    if (error instanceof UniqueConstraintError) {
+      return res.status(409).json({ success: false, error: 'E-mail, CPF ou matrícula já cadastrado.' });
+    }
+    return res.status(500).json({ success: false, error: 'Não foi possível atualizar o administrador.' });
   }
 };
 

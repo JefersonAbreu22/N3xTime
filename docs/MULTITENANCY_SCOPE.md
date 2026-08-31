@@ -76,13 +76,14 @@ O papel `admin` continua sendo o administrador da empresa. Ele não recebe permi
 
 O cadastro de uma nova empresa deve ser transacional:
 
-1. validar CNPJ/slug e dados do administrador;
+1. validar CNPJ/slug e os dados da empresa;
 2. criar `companies`;
 3. criar `company_profiles` com configurações padrão;
 4. cadastrar a chave exclusiva e criar `kiosk_controls` bloqueado por padrão;
-5. criar o primeiro usuário com papel `admin`;
-6. registrar o evento no log de auditoria;
-7. confirmar tudo ou desfazer tudo em caso de erro.
+5. registrar o evento no log de auditoria;
+6. confirmar tudo ou desfazer tudo em caso de erro.
+
+O administrador é tratado em uma etapa separada. Depois da criação, o Super Admin importa o dump existente; os administradores presentes nele são vinculados normalmente. Se o dump não trouxer um administrador, o Super Admin cadastra um pelo painel. Isso evita que uma importação com substituição remova um usuário criado apenas durante o provisionamento.
 
 O `KIOSK_ACCESS_KEY` do `.env` serve apenas para o bootstrap da empresa inicial via `npm run seed:admin`. As demais chaves são cadastradas no plano de controle ao criar a empresa. O admin do tenant pode substituí-la confirmando sua senha; a rotação revoga todas as sessões de terminal existentes.
 
@@ -116,7 +117,7 @@ O `KIOSK_ACCESS_KEY` do `.env` serve apenas para o bootstrap da empresa inicial 
 - usuário global da plataforma em `platform_users`;
 - autenticação unificada em `/login`, com descoberta automática do perfil Super Admin;
 - tela e API para cadastrar, suspender e reativar empresas;
-- provisionamento transacional da empresa, perfil, quiosque e primeiro administrador;
+- provisionamento transacional da empresa, perfil e quiosque, com gestão separada dos administradores;
 - senha temporária com troca obrigatória no primeiro acesso;
 - trilha global em `platform_audit_logs`;
 - suspensão com bloqueio imediato dos tokens do tenant e revogação do quiosque.

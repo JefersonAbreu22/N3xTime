@@ -2,7 +2,18 @@ import { Router } from 'express';
 import multer from 'multer';
 import { authenticate, authorize } from '../middlewares/authMiddleware.js';
 import { platformTransferRateLimiter } from '../middlewares/security.js';
-import { accessCompany, bootstrapPlatformSession, listCompanies, listPlatformLogs, provisionCompany, updateCompanyStatus } from '../controllers/platformController.js';
+import {
+  accessCompany,
+  bootstrapPlatformSession,
+  createCompanyAdmin,
+  listCompanies,
+  listCompanyAdmins,
+  listPlatformLogs,
+  provisionCompany,
+  updateCompany,
+  updateCompanyAdmin,
+  updateCompanyStatus,
+} from '../controllers/platformController.js';
 import { backupCompanyTenant, importCompanyTenant, listCompanyTransfers } from '../controllers/tenantTransferController.js';
 
 const router = Router();
@@ -14,7 +25,11 @@ const dumpUpload = multer({
 router.post('/auth/session', authenticate, bootstrapPlatformSession);
 router.get('/companies', authenticate, authorize(['platform_admin']), listCompanies);
 router.post('/companies', authenticate, authorize(['platform_admin']), provisionCompany);
+router.patch('/companies/:id', authenticate, authorize(['platform_admin']), updateCompany);
 router.post('/companies/:id/access', authenticate, authorize(['platform_admin']), accessCompany);
+router.get('/companies/:id/admins', authenticate, authorize(['platform_admin']), listCompanyAdmins);
+router.post('/companies/:id/admins', authenticate, authorize(['platform_admin']), createCompanyAdmin);
+router.put('/companies/:id/admins/:userId', authenticate, authorize(['platform_admin']), updateCompanyAdmin);
 router.patch('/companies/:id/status', authenticate, authorize(['platform_admin']), updateCompanyStatus);
 router.get('/companies/:id/backup', authenticate, authorize(['platform_admin']), platformTransferRateLimiter, backupCompanyTenant);
 router.post('/companies/:id/import', authenticate, authorize(['platform_admin']), platformTransferRateLimiter, dumpUpload.single('dump'), importCompanyTenant);
