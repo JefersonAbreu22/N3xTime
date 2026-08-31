@@ -18,7 +18,7 @@ DB_TRANSFER_NAME=n3xtime_transfer_staging
 DB_TRANSFER_USER=n3xtime_transfer
 DB_TRANSFER_PASS=...
 JWT_SECRET=...
-APP_PUBLIC_URL=https://n3xtime.com.br
+APP_PUBLIC_URL=https://www.n3xtime.com.br
 ```
 
 `JWT_SECRET` deve possuir pelo menos 32 caracteres.

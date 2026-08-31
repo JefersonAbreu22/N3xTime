@@ -3,6 +3,15 @@ import { escape as mysqlEscape } from 'mysql2';
 
 const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 const EXCLUDED_TENANT_TABLES = new Set(['company_memberships', 'platform_audit_logs', 'tenant_transfer_logs']);
+const ALL_LEADERSHIP_PERMISSIONS = JSON.stringify([
+  'view_team',
+  'manage_team',
+  'view_time_records',
+  'manage_time_records',
+  'approve_requests',
+  'view_reports',
+  'manage_biometrics',
+]);
 const LEGACY_COLUMN_ALIASES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   employee_requests: {
     absence_start_time: 'excused_start_time',
@@ -139,6 +148,51 @@ const sortTables = (tables: string[], fks: ForeignKeyMeta[]) => {
   return result;
 };
 
+const normalizeLegacyLeadership = async (connection: Connection, companyId: number) => {
+  // Some legacy databases identified leaders only through users.role/manager_id.
+  // Promote referenced managers first, then materialize the missing hierarchy.
+  await connection.execute(`
+    UPDATE users leader
+    INNER JOIN (
+      SELECT company_id, manager_id
+      FROM users
+      WHERE company_id=? AND status='active' AND manager_id IS NOT NULL
+      GROUP BY company_id, manager_id
+    ) managed ON managed.company_id=leader.company_id AND managed.manager_id=leader.id
+    SET leader.role='manager'
+    WHERE leader.company_id=? AND leader.status='active' AND leader.department_id IS NOT NULL
+  `, [companyId, companyId]);
+
+  await connection.execute(`
+    INSERT INTO department_hierarchy_levels (company_id,department_id,name,position,created_at,updated_at)
+    SELECT DISTINCT manager.company_id,manager.department_id,'Líder',1,NOW(),NOW()
+    FROM users manager
+    WHERE manager.company_id=? AND manager.status='active' AND manager.role='manager' AND manager.department_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM department_hierarchy_levels level
+        WHERE level.company_id=manager.company_id AND level.department_id=manager.department_id
+      )
+  `, [companyId]);
+
+  await connection.execute(`
+    INSERT INTO department_leader_assignments (company_id,department_id,level_id,user_id,permissions,created_at,updated_at)
+    SELECT manager.company_id,manager.department_id,level.id,manager.id,?,NOW(),NOW()
+    FROM users manager
+    INNER JOIN department_hierarchy_levels level
+      ON level.company_id=manager.company_id AND level.department_id=manager.department_id
+      AND level.position=1 AND level.name='Líder'
+    WHERE manager.company_id=? AND manager.status='active' AND manager.role='manager' AND manager.department_id IS NOT NULL
+      AND (
+        SELECT COUNT(*) FROM department_hierarchy_levels department_level
+        WHERE department_level.company_id=manager.company_id AND department_level.department_id=manager.department_id
+      )=1
+      AND NOT EXISTS (
+        SELECT 1 FROM department_leader_assignments assignment
+        WHERE assignment.company_id=manager.company_id AND assignment.user_id=manager.id
+      )
+  `, [ALL_LEADERSHIP_PERMISSIONS, companyId]);
+};
+
 export const createTenantBackup = async (companyId: number) => {
   const database = String(process.env.DB_NAME || '').trim(); if (!database) throw new Error('DB_NAME não configurado.');
   const connection = await mysql.createConnection(connectionOptions(database));
@@ -237,6 +291,7 @@ export const importTenantDump = async (companyId: number, buffer: Buffer, replac
         const newId = idMaps.get(item.table)?.get(item.id); const newRef = idMaps.get(item.refTable)?.get(item.oldRef);
         if (newId && newRef) await target.execute(`UPDATE ${ident(item.table)} SET ${ident(item.column)}=? WHERE id=? AND company_id=?`, [newRef, newId, companyId]);
       }
+      await normalizeLegacyLeadership(target, companyId);
       await target.commit();
     } catch (error) { await target.rollback(); throw error; }
     return { rowsProcessed, tables: ordered.length };

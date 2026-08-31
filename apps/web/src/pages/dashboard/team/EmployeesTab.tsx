@@ -49,6 +49,21 @@ const permissionLabels: Record<LeadershipPermission, string> = {
   view_reports: 'Relatórios', manage_biometrics: 'Biometria',
 };
 
+const getDepartmentLeaderIds = (department: DeptTeam) => {
+  const hierarchyLevels = department.hierarchy_levels ?? [];
+  const leaderIds = new Set(hierarchyLevels.flatMap((level) => level.leaders.map((leader) => leader.user_id)));
+
+  // Compatibilidade com empresas importadas antes da hierarquia por níveis:
+  // enquanto o setor não tiver níveis configurados, respeite o papel legado.
+  if (hierarchyLevels.length === 0) {
+    for (const user of department.users ?? []) {
+      if (user.role === 'manager') leaderIds.add(user.id);
+    }
+  }
+
+  return leaderIds;
+};
+
 const FaceRegistrationModal = lazy(() => import('../../../components/dashboard/FaceRegistrationModal'));
 
 export default function EmployeesTab() {
@@ -138,7 +153,7 @@ export default function EmployeesTab() {
     const departments = (depts.data as DeptTeam[] | undefined) ?? [];
     return departments
       .map((dept: DeptTeam) => {
-        const hierarchyLeaderIds = new Set((dept.hierarchy_levels ?? []).flatMap((level) => level.leaders.map((leader) => leader.user_id)));
+        const hierarchyLeaderIds = getDepartmentLeaderIds(dept);
         const hierarchyMatchesSearch = (dept.hierarchy_levels ?? []).some((level) =>
           level.name.toLowerCase().includes(normalizedSearch) || level.leaders.some((leader) =>
             leader.user?.name.toLowerCase().includes(normalizedSearch) || leader.user?.email.toLowerCase().includes(normalizedSearch)
@@ -227,7 +242,7 @@ export default function EmployeesTab() {
             const isExpanded = expandedDepts.includes(dept.id);
             const deptUsers = dept.users || [];
             const hierarchyLevels = dept.hierarchy_levels ?? [];
-            const hierarchyLeaderIds = new Set(hierarchyLevels.flatMap((level) => level.leaders.map((leader) => leader.user_id)));
+            const hierarchyLeaderIds = getDepartmentLeaderIds(dept);
             const leaders = deptUsers.filter((user: UserTeam) => hierarchyLeaderIds.has(user.id));
             const employees = deptUsers.filter((user: UserTeam) => !hierarchyLeaderIds.has(user.id));
             const leaderCount = hierarchyLeaderIds.size;

@@ -38,7 +38,7 @@ export const listDepartments = async (req: AuthRequest, res: Response) => {
 
     const managedIds = role === 'manager' ? await getManagedUserIds(requesterId, null, 'view_team') : [];
     const usersWhere = role === 'admin'
-      ? { status: 'active' }
+      ? { status: 'active', role: { [Op.ne]: 'admin' } }
       : { status: 'active', id: { [Op.in]: managedIds } };
 
     const departments = await Department.findAll({

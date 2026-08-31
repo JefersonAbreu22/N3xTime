@@ -13,7 +13,8 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         HOST: "127.0.0.1",
-        PORT: 4989
+        PORT: 4989,
+        APP_PUBLIC_URL: "https://www.n3xtime.com.br"
       }
     },
     {
