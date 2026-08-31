@@ -10,6 +10,7 @@
     "build": "pnpm -r run build",
     "build:api": "pnpm --filter @n3xtime/api build",
     "build:web": "pnpm --filter @n3xtime/web build",
+    "check:encoding": "node scripts/check-encoding.cjs",
     "lint": "pnpm --filter @n3xtime/web lint",
     "typecheck": "pnpm --filter @n3xtime/web typecheck",
     "test:multitenancy": "pnpm --filter @n3xtime/api test:multitenancy",

@@ -63,6 +63,9 @@ jobs:
       - name: Validate schema
         run: pnpm db:validate
 
+      - name: Validate UTF-8 encoding
+        run: pnpm check:encoding
+
       - name: Build API
         run: pnpm build:api
 

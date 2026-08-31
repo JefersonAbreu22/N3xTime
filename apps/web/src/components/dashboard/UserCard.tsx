@@ -1,4 +1,4 @@
-import { CalendarClock, Camera, Edit2, RefreshCw, Trash2 } from 'lucide-react';
+import { CalendarClock, Camera, Edit2, MapPin, RefreshCw, Trash2 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 
 const normalizeWorkDays = (value: unknown): number[] => {
@@ -85,7 +85,7 @@ export default function UserCard({
             </span>
             {user.remote_clock_in_enabled && (
               <span className="status-chip border-[#c8e7e7] bg-[#edf8f8] text-[#026666]" title={user.remote_clock_in_justification || 'Liberado para bater ponto remoto'}>
-                ðŸ“ Ponto Remoto
+                <MapPin className="h-3 w-3" /> Ponto remoto
               </span>
             )}
           </div>
@@ -101,7 +101,7 @@ export default function UserCard({
       {(canManageTeam || canManageBiometrics || canManageRecords) && (
         <div className="flex items-center gap-1">
           {onAssignAbsence && canManageRecords && (
-            <button onClick={onAssignAbsence} className="btn-ghost" title="LanÃ§ar Folga/FÃ©rias">
+            <button onClick={onAssignAbsence} className="btn-ghost" title="Lançar folga/férias">
               <CalendarClock className="h-3.5 w-3.5" />
             </button>
           )}
