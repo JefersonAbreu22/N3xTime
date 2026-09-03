@@ -15,6 +15,7 @@ import { PASSWORD_POLICY_MESSAGE, passwordSchema } from '../validation/passwordP
 import { runWithoutTenant, runWithTenant } from '../tenancy/tenantContext.js';
 import { allLeadershipPermissions, getEffectiveLeadershipPermissions } from '../utils/leadership.js';
 import crypto from 'crypto';
+import { releaseExpiredRestriction } from '../services/UserAccessService.js';
 
 const fingerprint = (hash: string) => crypto.createHash('sha256').update(hash).digest('hex');
 const publicUrl = () => (process.env.APP_PUBLIC_URL?.trim() || 'http://localhost:3979').replace(/\/$/, '');
@@ -22,10 +23,12 @@ const publicUrl = () => (process.env.APP_PUBLIC_URL?.trim() || 'http://localhost
 const buildTenantSession = async (account: Account, membership: CompanyMembership) => {
   const [company, user, companies] = await Promise.all([
     Company.findOne({ where: { id: membership.company_id, status: 'active' } }),
-    runWithoutTenant(() => User.findOne({ where: { id: membership.user_id, company_id: membership.company_id, status: 'active' } })),
+    runWithoutTenant(() => User.findOne({ where: { id: membership.user_id, company_id: membership.company_id } })),
     listAccountCompanies(account.id),
   ]);
   if (!company || !user) return null;
+  await runWithTenant(company.id, () => releaseExpiredRestriction(user));
+  if (user.status !== 'active') return null;
   const leadershipPermissions = user.role === 'admin'
     ? allLeadershipPermissions
     : user.role === 'manager'

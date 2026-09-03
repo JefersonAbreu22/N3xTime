@@ -1,5 +1,6 @@
-import { CalendarClock, Camera, Edit2, MapPin, RefreshCw, Trash2 } from 'lucide-react';
+import { Ban, CalendarClock, Camera, Edit2, MapPin, PlayCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import { accessRestrictionLabels, type AccessRestrictionType } from '../../services/usersApi';
 
 const normalizeWorkDays = (value: unknown): number[] => {
   if (Array.isArray(value)) return value.map(Number).filter((day) => day >= 0 && day <= 6);
@@ -21,6 +22,7 @@ export default function UserCard({
   onRegisterFace,
   onResetFace,
   onAssignAbsence,
+  onChangeStatus,
 }: {
   user: {
     id: number;
@@ -33,6 +35,11 @@ export default function UserCard({
     biometric_sample_count?: number;
     remote_clock_in_enabled?: boolean;
     remote_clock_in_justification?: string;
+    suspension_reason?: string | null;
+    suspended_at?: string | null;
+    suspension_type?: AccessRestrictionType | null;
+    suspension_start_date?: string | null;
+    suspension_end_at?: string | null;
     schedule?: {
       entry_time: string;
       exit_time: string;
@@ -45,6 +52,7 @@ export default function UserCard({
   onRegisterFace: () => void;
   onResetFace: () => void;
   onAssignAbsence?: () => void;
+  onChangeStatus?: () => void;
 }) {
   const auth = useAuthStore();
   const permissions = auth.user?.leadership_permissions ?? [];
@@ -53,6 +61,11 @@ export default function UserCard({
   const canManageRecords = auth.user?.role === 'admin' || permissions.includes('manage_time_records');
   const workDayLabels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
   const workDays = normalizeWorkDays(user.schedule?.work_days);
+  const restrictionLabel = user.suspension_type ? accessRestrictionLabels[user.suspension_type] : 'Acesso suspenso';
+  const restrictionTitle = [
+    user.suspension_reason,
+    user.suspension_end_at ? `Retorno automático: ${new Date(user.suspension_end_at).toLocaleDateString('pt-BR')}` : null,
+  ].filter(Boolean).join(' · ');
 
   return (
     <div className="flex items-center justify-between border border-[#e7e4e4] bg-white p-4 shadow-[0_8px_24px_rgba(25,23,23,0.05)] transition-shadow hover:shadow-[0_12px_28px_rgba(25,23,23,0.08)]">
@@ -77,8 +90,8 @@ export default function UserCard({
             <span className="text-[11px] uppercase tracking-[0.16em] text-[#8a8585]">
               {user.work_type === 'presential' ? 'Presencial' : user.work_type === 'remote' ? 'Home Office' : 'Hibrido'}
             </span>
-            <span className={`status-chip ${user.status === 'active' ? 'border-[#dceaea] bg-[#edf8f8] text-[#026666]' : 'border-[#f0dede] bg-[#fbf1f1] text-[#b43737]'}`}>
-              {user.status === 'active' ? 'Ativo' : 'Inativo'}
+            <span className={`status-chip ${user.status === 'active' ? 'border-[#dceaea] bg-[#edf8f8] text-[#026666]' : 'border-[#f0dede] bg-[#fbf1f1] text-[#b43737]'}`} title={restrictionTitle || undefined}>
+              {user.status === 'active' ? 'Ativo' : user.status === 'suspended' ? restrictionLabel : 'Inativo'}
             </span>
             <span className={`status-chip ${user.has_biometric ? 'border-[#dceaea] bg-[#edf8f8] text-[#026666]' : 'border-[#ece8e8] bg-[#f6f4f4] text-[#191717]'}`}>
               {user.has_biometric ? `Face ${user.biometric_sample_count ?? 0}` : 'Sem face'}
@@ -103,6 +116,11 @@ export default function UserCard({
           {onAssignAbsence && canManageRecords && (
             <button onClick={onAssignAbsence} className="btn-ghost" title="Lançar folga/férias">
               <CalendarClock className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onChangeStatus && canManageTeam && (
+            <button onClick={onChangeStatus} className="btn-ghost" title={user.status === 'suspended' ? 'Ver situação ou reativar' : 'Abrir Hub de vínculo e acesso'}>
+              {user.status === 'suspended' ? <PlayCircle className="h-3.5 w-3.5 text-[#026666]" /> : <Ban className="h-3.5 w-3.5 text-[#b43737]" />}
             </button>
           )}
           {canManageBiometrics && <button onClick={onRegisterFace} className="btn-ghost" title="Cadastrar Face">

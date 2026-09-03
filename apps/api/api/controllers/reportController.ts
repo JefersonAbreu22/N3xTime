@@ -738,7 +738,7 @@ const getScopedUsers = async (req: AuthRequest, departmentId?: number | null, us
     throw new Error('Não autorizado.');
   }
 
-  const where: Record<string, unknown> = { status: 'active', requires_time_tracking: true };
+  const where: Record<string, unknown> = { status: { [Op.ne]: 'inactive' }, requires_time_tracking: true };
   
   if (requester.role === 'employee') {
     where.id = requester.id;
@@ -753,7 +753,7 @@ const getScopedUsers = async (req: AuthRequest, departmentId?: number | null, us
 
   const users = await User.findAll({
     where,
-    attributes: ['id', 'name', 'registration_number', 'department_id', 'manager_id', 'work_type', 'remote_clock_in_enabled', 'hire_date'],
+    attributes: ['id', 'name', 'registration_number', 'department_id', 'manager_id', 'work_type', 'status', 'remote_clock_in_enabled', 'hire_date'],
     include: [
       { model: Department, as: 'department', attributes: ['id', 'name'], required: false },
       { model: User, as: 'manager', attributes: ['id', 'name'], required: false },
@@ -777,7 +777,7 @@ const getScopedUser = async (req: AuthRequest, userId: number) => {
   }
 
   const where: Record<string, unknown> = {
-    status: 'active',
+    status: { [Op.ne]: 'inactive' },
     requires_time_tracking: true,
   };
 
@@ -1011,7 +1011,10 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
     );
     const { start: todayStart, end: todayEnd } = getTodayBounds();
 
-    const users = await getScopedUsers(req, departmentId, userId);
+    const scopedUsers = await getScopedUsers(req, departmentId, userId);
+    const users = req.query.operationalOnly === 'true'
+      ? scopedUsers.filter((user) => user.status === 'active')
+      : scopedUsers;
     const userIds = users.map((user) => user.id);
 
     const emptyResponse = {
@@ -1026,6 +1029,8 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
         pinFallbacks: 0,
         biometricFailures: 0,
       },
+      lateArrivals: [],
+      todayTimeRecords: [],
       bankHours: createEmptyAttendanceMetrics(),
       absenceDocumentStats: {
         total: 0,
@@ -1124,6 +1129,55 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
       todayRecordMap.set(record.user_id, bucket);
     }
 
+    const todayTimeRecordsMap = new Map<string, {
+      departmentId: number | null;
+      departmentName: string;
+      collaborators: Array<{
+        userId: number;
+        userName: string;
+        registrationNumber: string;
+        records: Array<{
+          id: number;
+          recordTime: Date;
+          recordType: TimeRecord['record_type'];
+          method: TimeRecord['method'];
+          status: TimeRecord['status'];
+        }>;
+      }>;
+    }>();
+
+    for (const user of users) {
+      const records = todayRecordMap.get(user.id) ?? [];
+      if (!records.length) continue;
+
+      const key = String(user.department_id ?? 'none');
+      const department = todayTimeRecordsMap.get(key) ?? {
+        departmentId: user.department_id ?? null,
+        departmentName: user.department?.name ?? 'Sem setor',
+        collaborators: [],
+      };
+      department.collaborators.push({
+        userId: user.id,
+        userName: user.name,
+        registrationNumber: user.registration_number,
+        records: records.map((record) => ({
+          id: record.id,
+          recordTime: record.record_time,
+          recordType: record.record_type,
+          method: record.method,
+          status: record.status,
+        })),
+      });
+      todayTimeRecordsMap.set(key, department);
+    }
+
+    const todayTimeRecords = Array.from(todayTimeRecordsMap.values())
+      .map((department) => ({
+        ...department,
+        collaborators: department.collaborators.sort((a, b) => a.userName.localeCompare(b.userName, 'pt-BR')),
+      }))
+      .sort((a, b) => a.departmentName.localeCompare(b.departmentName, 'pt-BR'));
+
     const periodRecordsByUser = new Map<number, TimeRecord[]>();
     for (const record of periodRecords) {
       const bucket = periodRecordsByUser.get(record.user_id) ?? [];
@@ -1132,19 +1186,30 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
     }
 
     const presentToday = users.filter((user) => (todayRecordMap.get(user.id)?.length ?? 0) > 0).length;
-    const lateToday = users.filter((user) => {
+    const lateArrivals = users.flatMap((user) => {
       const records = (todayRecordMap.get(user.id) ?? []).sort(
         (a, b) => new Date(a.record_time).getTime() - new Date(b.record_time).getTime()
       );
       const entryRecord = records.find((record) => record.record_type === 'entry');
-      if (!entryRecord) return false;
+      if (!entryRecord) return [];
       const scheduleEntryTime = user.schedule?.entry_time ? String(user.schedule.entry_time).slice(0, 5) : '09:00';
-      return getLateMinutes({
+      const delayMinutes = getLateMinutes({
         scheduleEntryTime,
         actualEntryTime: entryRecord.record_time,
         lateToleranceMinutes,
-      }) > 0;
-    }).length;
+      });
+      if (delayMinutes <= 0) return [];
+      return [{
+        userId: user.id,
+        userName: user.name,
+        departmentName: user.department?.name ?? 'Sem setor',
+        scheduleEntryTime,
+        actualEntryTime: entryRecord.record_time,
+        delayMinutes,
+        isRemote: entryRecord.method === 'web',
+      }];
+    });
+    const lateToday = lateArrivals.length;
 
     const pinFallbacks = biometricEvents.filter((event) => event.event_type === 'pin_fallback').length;
     const biometricFailures = biometricEvents.filter((event) => event.event_type === 'verification_failure').length;
@@ -1336,6 +1401,7 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
         lastRecordType: TimeRecord['record_type'];
         lastRecordMethod: TimeRecord['method'];
         isRemote: boolean;
+        workType: User['work_type'];
       }>;
       statuses: Array<{
         userId: number;
@@ -1347,6 +1413,7 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
         hasRecordToday: boolean;
         lastRecordAt: Date | null;
         isRemote: boolean;
+        workType: User['work_type'];
       }>;
       absent: Array<{
         userId: number;
@@ -1383,6 +1450,7 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
           hasRecordToday: Boolean(lastRecord),
           lastRecordAt: lastRecord?.record_time ?? null,
           isRemote,
+          workType: user.work_type,
         });
       } else if (lastRecord) {
         acc.present.push({
@@ -1393,6 +1461,7 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
           lastRecordType: lastRecord.record_type,
           lastRecordMethod: lastRecord.method,
           isRemote,
+          workType: user.work_type,
         });
       } else if (isScheduledToday) {
         acc.absent.push({
@@ -1419,6 +1488,8 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
           pinFallbacks,
           biometricFailures,
         },
+        lateArrivals,
+        todayTimeRecords,
         missingClockIns,
         todayWorkforce,
         bankHours,

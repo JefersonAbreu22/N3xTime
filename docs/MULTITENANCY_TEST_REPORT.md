@@ -1,10 +1,10 @@
 # Relatório de validação do multitenancy
 
-Data da execução: 11/08/2026
+Data da execução: 31/08/2026
 
 ## Resultado executivo
 
-- 36 de 36 cenários funcionais, de segurança e de isolamento aprovados.
+- 45 de 45 cenários funcionais, de segurança e de isolamento aprovados.
 - Nenhuma falha funcional de multitenancy foi encontrada na matriz executada.
 - O risco de acesso público aos arquivos foi corrigido e os testes confirmam autenticação, autorização e isolamento por empresa.
 - Backend e frontend compilam para produção.
@@ -18,8 +18,7 @@ A suíte cria o banco temporário `n3xtime_multitenant_test`, sobe a aplicação
 Comando reproduzível:
 
 ```bash
-cd backend
-npm run test:multitenancy
+pnpm test:multitenancy
 ```
 
 O processo retorna código `0` quando não há falhas nem riscos, `1` quando existe falha funcional e `2` quando todos os testes funcionais passam, mas um risco de segurança é confirmado.
@@ -33,6 +32,11 @@ O processo retorna código `0` quando não há falhas nem riscos, `1` quando exi
 - reconhecimento do Super Admin pelo login unificado;
 - autenticação obrigatória nas rotas privadas;
 - isolamento do perfil empresarial, equipe, setores e hierarquias;
+- isolamento do Hub de vínculos e afastamentos entre empresas;
+- bloqueio imediato da sessão do colaborador afastado sem revogar seus vínculos em outros tenants;
+- exigência da permissão `manage_team` para o líder aplicar ou encerrar afastamentos;
+- exclusão de afastados do radar operacional do dia e retorno automático ao fim do período;
+- agrupamento das batidas do dashboard por setor, sem exposição de colaboradores de outro tenant;
 - coexistência de feriados iguais em empresas distintas;
 - isolamento de marcações e relatórios de presença;
 - colaborador limitado às próprias marcações;
@@ -53,9 +57,12 @@ O processo retorna código `0` quando não há falhas nem riscos, `1` quando exi
 
 ## Validações complementares
 
-- `backend`: `npm run build` aprovado.
-- `frontend`: `npm run build` aprovado.
-- `frontend`: `npm run lint` aprovado sem erros ou avisos.
+- `api`: `pnpm build:api` aprovado.
+- `web`: `pnpm build:web` aprovado.
+- `web`: `pnpm typecheck` aprovado.
+- `web`: `pnpm lint` aprovado sem erros ou avisos.
+- `database`: `pnpm db:validate` aprovado.
+- `encoding`: `pnpm check:encoding` aprovado.
 - O build do frontend também alerta sobre um chunk de reconhecimento facial acima de 500 kB.
 
 ## Melhorias implementadas
@@ -74,7 +81,7 @@ O frontend passou a baixar esses conteúdos autenticados como `Blob`, revogando 
 
 ### Qualidade estática
 
-Foram corrigidos os 14 erros e 9 avisos encontrados. O comando `npm run lint` agora termina sem ocorrências.
+Foram corrigidos os 14 erros e 9 avisos encontrados. O comando `pnpm lint` termina sem ocorrências.
 
 ### Prioridade média — ampliar a automação
 

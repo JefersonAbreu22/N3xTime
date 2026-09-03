@@ -38,15 +38,15 @@ export const listDepartments = async (req: AuthRequest, res: Response) => {
 
     const managedIds = role === 'manager' ? await getManagedUserIds(requesterId, null, 'view_team') : [];
     const usersWhere = role === 'admin'
-      ? { status: 'active', role: { [Op.ne]: 'admin' } }
-      : { status: 'active', id: { [Op.in]: managedIds } };
+      ? { status: { [Op.ne]: 'inactive' }, role: { [Op.ne]: 'admin' } }
+      : { status: { [Op.ne]: 'inactive' }, id: { [Op.in]: managedIds } };
 
     const departments = await Department.findAll({
       include: [
         {
           model: User,
           as: 'users',
-          attributes: ['id', 'name', 'email', 'role', 'status', 'manager_id', 'department_id', 'work_type', 'facial_descriptor', 'remote_clock_in_enabled', 'remote_clock_in_justification'],
+          attributes: ['id', 'name', 'email', 'role', 'status', 'suspended_at', 'suspended_by', 'suspension_reason', 'suspension_type', 'suspension_start_date', 'suspension_end_at', 'manager_id', 'department_id', 'work_type', 'facial_descriptor', 'remote_clock_in_enabled', 'remote_clock_in_justification'],
           where: usersWhere,
           required: false,
           include: [

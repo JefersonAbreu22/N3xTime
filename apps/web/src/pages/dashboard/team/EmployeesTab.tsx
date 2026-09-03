@@ -10,6 +10,7 @@ import UserCard from '../../../components/dashboard/UserCard';
 import EmployeeFormModal from './EmployeeFormModal';
 import AssignAbsenceModal from '../../../components/dashboard/AssignAbsenceModal';
 import { lazy, Suspense } from 'react';
+import SuspensionModal from '../../../components/dashboard/SuspensionModal';
 
 interface UserTeam {
   id: number;
@@ -24,6 +25,12 @@ interface UserTeam {
   remote_clock_in_enabled?: boolean;
   remote_clock_in_justification?: string;
   requires_time_tracking?: boolean;
+  suspended_at?: string | null;
+  suspended_by?: number | null;
+  suspension_reason?: string | null;
+  suspension_type?: import('../../../services/usersApi').AccessRestrictionType | null;
+  suspension_start_date?: string | null;
+  suspension_end_at?: string | null;
   schedule?: {
     entry_time: string;
     exit_time: string;
@@ -75,6 +82,7 @@ export default function EmployeesTab() {
   const [editingUser, setEditingUser] = useState<UserTeam | null>(null);
   const [faceRegisterUser, setFaceRegisterUser] = useState<UserTeam | null>(null);
   const [assignAbsenceUser, setAssignAbsenceUser] = useState<UserTeam | null>(null);
+  const [restrictionUser, setRestrictionUser] = useState<UserTeam | null>(null);
   const [search, setSearch] = useState('');
   const [viewFilter, setViewFilter] = useState<'all' | 'leaders' | 'employees'>('all');
 
@@ -312,7 +320,7 @@ export default function EmployeesTab() {
                           ) : (
                             <div className="space-y-2">
                               {leaders.map((user: UserTeam) => (
-                                <UserCard key={user.id} user={{ ...user, role: 'manager' } as unknown as Parameters<typeof UserCard>[0]['user']} onEdit={() => openEditUser(user)} onDelete={() => removeUser.mutate(user.id)} onRegisterFace={() => setFaceRegisterUser(user)} onResetFace={() => resetFace.mutate({ userId: user.id, userName: user.name })} onAssignAbsence={() => setAssignAbsenceUser(user)} />
+                                <UserCard key={user.id} user={{ ...user, role: 'manager' } as unknown as Parameters<typeof UserCard>[0]['user']} onEdit={() => openEditUser(user)} onDelete={() => removeUser.mutate(user.id)} onRegisterFace={() => setFaceRegisterUser(user)} onResetFace={() => resetFace.mutate({ userId: user.id, userName: user.name })} onAssignAbsence={() => setAssignAbsenceUser(user)} onChangeStatus={() => setRestrictionUser(user)} />
                               ))}
                             </div>
                           )}
@@ -325,7 +333,7 @@ export default function EmployeesTab() {
                           ) : (
                             <div className="space-y-2">
                               {employees.map((user: UserTeam) => (
-                                <UserCard key={user.id} user={{ ...user, role: 'employee' } as unknown as Parameters<typeof UserCard>[0]['user']} onEdit={() => openEditUser(user)} onDelete={() => removeUser.mutate(user.id)} onRegisterFace={() => setFaceRegisterUser(user)} onResetFace={() => resetFace.mutate({ userId: user.id, userName: user.name })} onAssignAbsence={() => setAssignAbsenceUser(user)} />
+                                <UserCard key={user.id} user={{ ...user, role: 'employee' } as unknown as Parameters<typeof UserCard>[0]['user']} onEdit={() => openEditUser(user)} onDelete={() => removeUser.mutate(user.id)} onRegisterFace={() => setFaceRegisterUser(user)} onResetFace={() => resetFace.mutate({ userId: user.id, userName: user.name })} onAssignAbsence={() => setAssignAbsenceUser(user)} onChangeStatus={() => setRestrictionUser(user)} />
                               ))}
                             </div>
                           )}
@@ -360,7 +368,7 @@ export default function EmployeesTab() {
               <div className="border-t border-[#ece8e8] bg-[#f8f6f6] p-6">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {filteredNoDeptUsers.map((user: UserTeam) => (
-                    <UserCard key={user.id} user={user as unknown as Parameters<typeof UserCard>[0]['user']} onEdit={() => openEditUser(user)} onDelete={() => removeUser.mutate(user.id)} onRegisterFace={() => setFaceRegisterUser(user)} onResetFace={() => resetFace.mutate({ userId: user.id, userName: user.name })} onAssignAbsence={() => setAssignAbsenceUser(user)} />
+                    <UserCard key={user.id} user={user as unknown as Parameters<typeof UserCard>[0]['user']} onEdit={() => openEditUser(user)} onDelete={() => removeUser.mutate(user.id)} onRegisterFace={() => setFaceRegisterUser(user)} onResetFace={() => resetFace.mutate({ userId: user.id, userName: user.name })} onAssignAbsence={() => setAssignAbsenceUser(user)} onChangeStatus={() => setRestrictionUser(user)} />
                   ))}
                 </div>
               </div>
@@ -399,6 +407,12 @@ export default function EmployeesTab() {
         <AssignAbsenceModal
           user={assignAbsenceUser as unknown as import('../../../services/usersApi').TeamUser}
           onClose={() => setAssignAbsenceUser(null)}
+        />
+      )}
+      {restrictionUser && (
+        <SuspensionModal
+          user={restrictionUser as unknown as import('../../../services/usersApi').TeamUser}
+          onClose={() => setRestrictionUser(null)}
         />
       )}
     </div>

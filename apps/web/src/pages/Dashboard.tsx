@@ -24,6 +24,7 @@ const EmployeesTab = lazy(() => import('./dashboard/team/EmployeesTab'));
 const DepartmentsTab = lazy(() => import('./dashboard/team/DepartmentsTab'));
 const SchedulesTab = lazy(() => import('./dashboard/team/SchedulesTab'));
 const BiometricsTab = lazy(() => import('./dashboard/team/BiometricsTab'));
+const RestrictionsTab = lazy(() => import('./dashboard/team/RestrictionsTab'));
 const ReportsLayout = lazy(() => import('./dashboard/reports/ReportsLayout'));
 const IndicatorsTab = lazy(() => import('./dashboard/reports/IndicatorsTab'));
 const TimesheetTab = lazy(() => import('./dashboard/reports/TimesheetTab'));
@@ -133,6 +134,7 @@ export default function Dashboard() {
                 <Route path="employees" element={canViewTeam ? <EmployeesTab /> : <Navigate to="../biometrics" replace />} />
                 <Route path="departments" element={role === 'admin' ? <DepartmentsTab /> : <Navigate to="../employees" replace />} />
                 <Route path="schedules" element={canManageTeam ? <SchedulesTab /> : <Navigate to="../employees" replace />} />
+                <Route path="restrictions" element={canManageTeam ? <RestrictionsTab /> : <Navigate to="../employees" replace />} />
                 <Route path="biometrics" element={canManageBiometrics ? <BiometricsTab /> : <Navigate to="../employees" replace />} />
               </Route>
               <Route path="/reports" element={canViewReports ? <ReportsLayout /> : <Navigate to="/dashboard" replace />}>

@@ -76,6 +76,7 @@ const { runWithTenant, runWithoutTenant } = await import('../tenancy/tenantConte
 const { fingerprintKioskKey } = await import('../utils/kioskKey.js');
 const { getManagedUserIds } = await import('../utils/leadership.js');
 const { cleanExpiredRemotePhotos } = await import('../services/RemotePhotoRetentionService.js');
+const { releaseAllExpiredRestrictions } = await import('../services/UserAccessService.js');
 const { applyPartialAbsenceCredit } = await import('../services/AttendanceCalculator.js');
 const { mapLegacyTenantColumns } = await import('../services/tenantTransferService.js');
 const { default: app } = await import('../app.js');
@@ -251,7 +252,7 @@ try {
   const platformToken = jwt.sign(
     { id: platformUser.id, role: 'platform_admin', scope: 'platform' }, process.env.JWT_SECRET!, { expiresIn: '10m' }
   );
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 
   await run('abono parcial preserva o crédito positivo da regra legada', () => {
     const joaoGabriel = applyPartialAbsenceCredit({ requiredMinutes: 540, workedMinutes: 261, absenceMinutes: 346 });
@@ -370,6 +371,125 @@ try {
     assert(serialized.includes(tenantA.employee.email));
     assert(!serialized.includes(tenantB.employee.email));
   });
+  await run('hub de afastamentos bloqueia a sessão e permanece isolado por empresa', async () => {
+    const suspension = await api(`/api/users/${tenantA.employee.id}/status`, {
+      token: adminTokenA,
+      method: 'PATCH',
+      body: {
+        status: 'suspended',
+        restriction_type: 'temporary_suspension',
+        start_date: today,
+        end_date: today,
+        reason: 'Suspensão temporária para validar o isolamento multitenant.',
+      },
+    });
+    assert.equal(suspension.status, 200);
+    assert.equal(suspension.body.data.status, 'suspended');
+
+    try {
+      assert.equal((await api('/api/auth/me', { token: employeeTokenA })).status, 403);
+
+      const teamA = await api('/api/users/team', { token: adminTokenA });
+      assert.equal(teamA.status, 200);
+      const suspendedUser = teamA.body.data.find((item: any) => item.id === tenantA.employee.id);
+      assert.equal(suspendedUser?.status, 'suspended');
+      assert.equal(suspendedUser?.suspension_type, 'temporary_suspension');
+
+      const dashboardA = await api(`/api/reports/hr-summary?startDate=${today}&endDate=${today}&operationalOnly=true`, { token: adminTokenA });
+      assert.equal(dashboardA.status, 200);
+      assert(!JSON.stringify(dashboardA.body.data).includes(tenantA.employee.name));
+
+      const crossTenant = await api(`/api/users/${tenantA.employee.id}/status`, {
+        token: adminTokenB,
+        method: 'PATCH',
+        body: { status: 'active' },
+      });
+      assert.equal(crossTenant.status, 404);
+      const preserved = await runWithTenant(companyA.id, () => User.findByPk(tenantA.employee.id));
+      assert.equal(preserved?.status, 'suspended');
+    } finally {
+      const reactivation = await api(`/api/users/${tenantA.employee.id}/status`, {
+        token: adminTokenA,
+        method: 'PATCH',
+        body: { status: 'active' },
+      });
+      assert.equal(reactivation.status, 200);
+    }
+
+    assert.equal((await api('/api/auth/me', { token: employeeTokenA })).status, 200);
+  });
+  await run('líder só aplica afastamento com a permissão manage_team', async () => {
+    const denied = await api(`/api/users/${tenantA.employee.id}/status`, {
+      token: managerTokenA,
+      method: 'PATCH',
+      body: {
+        status: 'suspended',
+        restriction_type: 'other_leave',
+        start_date: today,
+        reason: 'Tentativa sem a permissão necessária.',
+      },
+    });
+    assert.equal(denied.status, 403);
+
+    await runWithTenant(companyA.id, () => tenantA.assignment.update({
+      permissions: ['view_team', 'view_time_records', 'view_reports', 'manage_team'],
+    }));
+    try {
+      const allowed = await api(`/api/users/${tenantA.employee.id}/status`, {
+        token: managerTokenA,
+        method: 'PATCH',
+        body: {
+          status: 'suspended',
+          restriction_type: 'other_leave',
+          start_date: today,
+          reason: 'Afastamento autorizado pelo líder responsável.',
+        },
+      });
+      assert.equal(allowed.status, 200);
+      assert.equal(allowed.body.data.status, 'suspended');
+
+      const reactivation = await api(`/api/users/${tenantA.employee.id}/status`, {
+        token: managerTokenA,
+        method: 'PATCH',
+        body: { status: 'active' },
+      });
+      assert.equal(reactivation.status, 200);
+    } finally {
+      await runWithTenant(companyA.id, () => tenantA.assignment.update({
+        permissions: ['view_team', 'view_time_records', 'view_reports'],
+      }));
+      await api(`/api/users/${tenantA.employee.id}/status`, {
+        token: adminTokenA,
+        method: 'PATCH',
+        body: { status: 'active' },
+      });
+    }
+  });
+  await run('afastamento vencido é encerrado automaticamente no tenant correto', async () => {
+    await runWithTenant(companyA.id, async () => {
+      const user = await User.findByPk(tenantA.employee.id);
+      assert(user);
+      await user.update({
+        status: 'suspended',
+        suspended_at: new Date(Date.now() - 48 * 60 * 60 * 1000),
+        suspended_by: tenantA.admin.id,
+        suspension_reason: 'Afastamento vencido para retorno automático.',
+        suspension_type: 'temporary_suspension',
+        suspension_start_date: today,
+        suspension_end_at: new Date(Date.now() - 60 * 1000),
+      });
+    });
+
+    assert.equal(await releaseAllExpiredRestrictions(), 1);
+    const released = await runWithTenant(companyA.id, () => User.findByPk(tenantA.employee.id));
+    assert.equal(released?.status, 'active');
+    assert.equal(released?.suspension_type, null);
+    assert.equal(released?.suspension_end_at, null);
+    assert.equal((await api('/api/auth/me', { token: employeeTokenA })).status, 200);
+
+    const untouched = await runWithTenant(companyB.id, () => User.findByPk(tenantB.employee.id));
+    assert.equal(untouched?.status, 'active');
+  });
   await run('requisições concorrentes mantêm contextos de empresa independentes', async () => {
     const responses = await Promise.all(Array.from({ length: 20 }, (_, index) =>
       api('/api/users/team', { token: index % 2 === 0 ? adminTokenA : adminTokenB })
@@ -420,6 +540,18 @@ try {
     const serialized = JSON.stringify(response.body.data);
     assert(serialized.includes(tenantA.employee.name));
     assert(!serialized.includes(tenantB.employee.name));
+  });
+  await run('dashboard agrupa as batidas por setor sem vazar outro tenant', async () => {
+    const response = await api(`/api/reports/hr-summary?startDate=${today}&endDate=${today}&operationalOnly=true`, { token: adminTokenA });
+    assert.equal(response.status, 200);
+    const departments = response.body.data.todayTimeRecords;
+    assert(Array.isArray(departments));
+    const department = departments.find((item: any) => item.departmentId === tenantA.department.id);
+    assert.equal(department?.departmentName, tenantA.department.name);
+    const collaborator = department?.collaborators.find((item: any) => item.userId === tenantA.employee.id);
+    assert.equal(collaborator?.userName, tenantA.employee.name);
+    assert.equal(collaborator?.records[0]?.recordType, 'entry');
+    assert(!JSON.stringify(departments).includes(tenantB.employee.name));
   });
   await run('consulta cumulativa rejeita colaborador de outro tenant', async () => {
     const response = await api(`/api/reports/cumulative-bank-hours?userId=${tenantB.employee.id}`, { token: adminTokenA });

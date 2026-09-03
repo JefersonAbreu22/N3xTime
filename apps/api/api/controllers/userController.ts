@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { Op, col, fn, UniqueConstraintError } from 'sequelize';
 import { AuthRequest } from '../middlewares/authMiddleware.js';
-import { User } from '../models/User.js';
+import { User, type AccessRestrictionType } from '../models/User.js';
 import { Account } from '../models/Account.js';
 import { CompanyMembership } from '../models/CompanyMembership.js';
 import { BiometricSample } from '../models/BiometricSample.js';
@@ -182,6 +182,115 @@ const upsertUserSchedule = async ({
 };
 
 import { AuditService } from '../services/AuditService.js';
+import { accessRestrictionSnapshot } from '../services/UserAccessService.js';
+
+const restrictionTypes = [
+  'temporary_suspension',
+  'inss_leave',
+  'occupational_leave',
+  'parental_leave',
+  'unpaid_leave',
+  'permanent_disability_retirement',
+  'military_service',
+  'union_or_elective_mandate',
+  'family_care_leave',
+  'protective_measure',
+  'judicial_detention',
+  'other_leave',
+  'termination',
+] as const;
+const datedRestrictionTypes = new Set<AccessRestrictionType>(['temporary_suspension', 'parental_leave', 'unpaid_leave']);
+const restrictionDateSchema = dateOnlySchema.optional().nullable();
+
+const changeUserStatusSchema = z.object({
+  status: z.enum(['active', 'suspended']),
+  reason: z.string().trim().max(1000).optional().nullable(),
+  restriction_type: z.enum(restrictionTypes).optional().nullable(),
+  start_date: restrictionDateSchema,
+  end_date: restrictionDateSchema,
+}).superRefine((payload, context) => {
+  if (payload.status !== 'suspended') return;
+  if (!payload.reason || payload.reason.length < 5) {
+    context.addIssue({ code: 'custom', path: ['reason'], message: 'Informe o motivo com pelo menos 5 caracteres.' });
+  }
+  if (!payload.restriction_type) {
+    context.addIssue({ code: 'custom', path: ['restriction_type'], message: 'Selecione a situação do colaborador.' });
+  }
+  if (!payload.start_date) {
+    context.addIssue({ code: 'custom', path: ['start_date'], message: 'Informe a data de início.' });
+  }
+  if (payload.restriction_type && datedRestrictionTypes.has(payload.restriction_type) && !payload.end_date) {
+    context.addIssue({ code: 'custom', path: ['end_date'], message: 'Informe a data prevista de retorno.' });
+  }
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  if (payload.start_date && payload.start_date > today) {
+    context.addIssue({ code: 'custom', path: ['start_date'], message: 'A data de início não pode estar no futuro.' });
+  }
+  if (payload.start_date && payload.end_date && payload.end_date < payload.start_date) {
+    context.addIssue({ code: 'custom', path: ['end_date'], message: 'A data de retorno deve ser igual ou posterior ao início.' });
+  }
+});
+
+export const changeUserStatus = async (req: AuthRequest, res: Response) => {
+  try {
+    const requester = req.user;
+    if (!requester || !['admin', 'manager'].includes(requester.role)) {
+      return res.status(403).json({ success: false, error: 'Acesso negado.' });
+    }
+
+    const parsed = changeUserStatusSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.issues[0]?.message || 'Dados inválidos.' });
+    }
+
+    const user = await User.findByPk(req.params.id);
+    if (!user || user.status === 'inactive') {
+      return res.status(404).json({ success: false, error: 'Colaborador não encontrado.' });
+    }
+    if (user.id === requester.id || user.role === 'admin') {
+      return res.status(403).json({ success: false, error: 'Não é permitido alterar o próprio acesso ou o de outro administrador.' });
+    }
+    if (requester.role === 'manager') {
+      const canManage = user.role === 'employee' && await isManagerResponsibleForUser(requester.id, null, user, 'manage_team');
+      if (!canManage) {
+        return res.status(403).json({ success: false, error: 'Você só pode alterar a situação dos colaboradores sob sua gestão.' });
+      }
+    }
+
+    const oldValue = accessRestrictionSnapshot(user);
+    const isSuspending = parsed.data.status === 'suspended';
+    const endDate = isSuspending && parsed.data.restriction_type !== 'termination' && parsed.data.end_date
+      ? new Date(`${parsed.data.end_date}T23:59:59.999-03:00`)
+      : null;
+
+    user.status = parsed.data.status;
+    user.suspended_at = isSuspending ? new Date() : null;
+    user.suspended_by = isSuspending ? requester.id : null;
+    user.suspension_reason = isSuspending ? parsed.data.reason?.trim() || null : null;
+    user.suspension_type = isSuspending ? parsed.data.restriction_type || null : null;
+    user.suspension_start_date = isSuspending ? parsed.data.start_date || null : null;
+    user.suspension_end_at = endDate;
+    await user.save();
+
+    await AuditService.log({
+      user_id: requester.id,
+      action: isSuspending ? 'SUSPEND_USER' : 'REACTIVATE_USER',
+      entity_name: 'users',
+      entity_id: user.id,
+      old_value: oldValue,
+      new_value: accessRestrictionSnapshot(user),
+    }, req);
+
+    return res.json({
+      success: true,
+      data: { id: user.id, ...accessRestrictionSnapshot(user) },
+      message: isSuspending ? 'Situação aplicada e acesso bloqueado com sucesso.' : 'Colaborador reativado com sucesso.',
+    });
+  } catch (error) {
+    console.error('Change user status error:', error);
+    return res.status(500).json({ success: false, error: 'Erro ao alterar o acesso do colaborador.' });
+  }
+};
 
 export const createEmployee = async (req: AuthRequest, res: Response) => {
   try {
@@ -356,6 +465,9 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     }
 
     const p = parsed.data;
+    if (p.status && user.status === 'suspended') {
+      return res.status(400).json({ success: false, error: 'Use o Hub de vínculo e acesso para reativar o colaborador e registrar a auditoria.' });
+    }
     console.log('--- UPDATE USER PAYLOAD ---');
     console.log(JSON.stringify(req.body.work_schedule, null, 2));
     console.log('--- PARSED ---');
@@ -481,6 +593,12 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
 
     // Em vez de hard delete, faremos soft delete / inativação
     user.status = 'inactive';
+    user.suspended_at = null;
+    user.suspended_by = null;
+    user.suspension_reason = null;
+    user.suspension_type = null;
+    user.suspension_start_date = null;
+    user.suspension_end_at = null;
     await user.save();
     await CompanyMembership.update(
       { status: 'inactive' },
@@ -511,11 +629,11 @@ export const listTeam = async (req: AuthRequest, res: Response) => {
 
     const managedIds = role === 'manager' ? await getManagedUserIds(requesterId, null, 'view_team') : [];
     const where = role === 'admin'
-      ? { status: 'active', role: { [Op.ne]: 'admin' } }
-      : { status: 'active', id: { [Op.in]: managedIds } };
+      ? { status: { [Op.ne]: 'inactive' }, role: { [Op.ne]: 'admin' } }
+      : { status: { [Op.ne]: 'inactive' }, id: { [Op.in]: managedIds } };
     const users = await User.findAll({
       where,
-      attributes: ['id', 'name', 'email', 'registration_number', 'work_type', 'status', 'created_at', 'role', 'manager_id', 'department_id', 'facial_descriptor', 'schedule_id', 'remote_clock_in_enabled', 'remote_clock_in_justification', 'hire_date', 'requires_time_tracking'],
+      attributes: ['id', 'name', 'email', 'registration_number', 'work_type', 'status', 'suspended_at', 'suspended_by', 'suspension_reason', 'suspension_type', 'suspension_start_date', 'suspension_end_at', 'created_at', 'role', 'manager_id', 'department_id', 'facial_descriptor', 'schedule_id', 'remote_clock_in_enabled', 'remote_clock_in_justification', 'hire_date', 'requires_time_tracking'],
       include: [
         {
           model: User,

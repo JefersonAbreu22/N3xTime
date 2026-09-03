@@ -7,6 +7,28 @@ enum ActiveInactiveStatus {
   inactive
 }
 
+enum UserStatus {
+  active
+  suspended
+  inactive
+}
+
+enum AccessRestrictionType {
+  temporary_suspension
+  inss_leave
+  occupational_leave
+  parental_leave
+  unpaid_leave
+  permanent_disability_retirement
+  military_service
+  union_or_elective_mandate
+  family_care_leave
+  protective_measure
+  judicial_detention
+  other_leave
+  termination
+}
+
 enum AttendanceStatus {
   absent
   in_progress
@@ -227,7 +249,13 @@ model User {
   schedule_id                   Int?
   pin_code                      String?                      @db.VarChar(255)
   facial_descriptor             String?                      @db.LongText
-  status                        ActiveInactiveStatus?        @default(active)
+  status                        UserStatus                    @default(active)
+  suspended_at                  DateTime?                     @db.DateTime(0)
+  suspended_by                  Int?
+  suspension_reason             String?                       @db.Text
+  suspension_type               AccessRestrictionType?
+  suspension_start_date         DateTime?                     @db.Date
+  suspension_end_at             DateTime?                     @db.DateTime(0)
   hire_date                     DateTime?                    @db.Date
   remote_clock_in_enabled       Boolean                      @default(false)
   remote_clock_in_justification String?                      @db.Text
@@ -260,6 +288,8 @@ model User {
   @@unique([company_id, registration_number], map: "users_company_id_registration_number")
   @@unique([company_id, email], map: "users_company_id_email")
   @@index([company_id], map: "users_company_id")
+  @@index([company_id, status], map: "users_company_id_status")
+  @@index([company_id, suspension_end_at], map: "users_company_id_suspension_end_at")
   @@map("users")
 }
 

@@ -1,5 +1,36 @@
 import { http } from './http';
 
+export type AccessRestrictionType =
+  | 'temporary_suspension'
+  | 'inss_leave'
+  | 'occupational_leave'
+  | 'parental_leave'
+  | 'unpaid_leave'
+  | 'permanent_disability_retirement'
+  | 'military_service'
+  | 'union_or_elective_mandate'
+  | 'family_care_leave'
+  | 'protective_measure'
+  | 'judicial_detention'
+  | 'other_leave'
+  | 'termination';
+
+export const accessRestrictionLabels: Record<AccessRestrictionType, string> = {
+  temporary_suspension: 'Suspensão temporária',
+  inss_leave: 'Afastamento pelo INSS',
+  occupational_leave: 'Acidente/doença do trabalho',
+  parental_leave: 'Licença maternidade/parental',
+  unpaid_leave: 'Licença não remunerada',
+  permanent_disability_retirement: 'Aposentadoria por incapacidade',
+  military_service: 'Serviço militar',
+  union_or_elective_mandate: 'Mandato sindical ou eleitoral',
+  family_care_leave: 'Acompanhamento familiar',
+  protective_measure: 'Afastamento por medida protetiva',
+  judicial_detention: 'Determinação judicial',
+  other_leave: 'Outro afastamento',
+  termination: 'Desligado',
+};
+
 export type TeamUser = {
   id: number;
   name: string;
@@ -25,7 +56,13 @@ export type TeamUser = {
     work_days: number[];
     daily_workload_minutes: number;
   } | null;
-  status: 'active' | 'inactive';
+  status: 'active' | 'suspended' | 'inactive';
+  suspended_at?: string | null;
+  suspended_by?: number | null;
+  suspension_reason?: string | null;
+  suspension_type?: AccessRestrictionType | null;
+  suspension_start_date?: string | null;
+  suspension_end_at?: string | null;
   remote_clock_in_enabled?: boolean;
   remote_clock_in_justification?: string | null;
   hire_date?: string | null;
@@ -110,6 +147,16 @@ export const usersApi = {
   },
   updateEmployee: async (id: number, payload: Partial<CreateEmployeePayload>) => {
     const res = await http.put<{ success: boolean; message: string }>(`/users/${id}`, payload);
+    return res.data;
+  },
+  changeStatus: async (id: number, payload: {
+    status: 'active' | 'suspended';
+    reason?: string | null;
+    restriction_type?: AccessRestrictionType | null;
+    start_date?: string | null;
+    end_date?: string | null;
+  }) => {
+    const res = await http.patch<{ success: boolean; message: string }>(`/users/${id}/status`, payload);
     return res.data;
   },
   deleteEmployee: async (id: number) => {

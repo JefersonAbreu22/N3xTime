@@ -164,6 +164,7 @@ export const getDashboardProfileLabel = (role: DashboardRole) => {
 
 export const getCurrentDashboardPageTitle = (pathname: string) => {
   if (pathname.includes('/dashboard/platform')) return 'Painel Super Admin';
+  if (pathname.includes('/team/restrictions')) return 'Vínculos e afastamentos';
   if (pathname.includes('/my-point') || pathname.includes('/records')) return 'Meu Ponto';
   if (pathname.includes('/requests')) return 'Solicitações';
   if (pathname.includes('/pending')) return 'Pendências';

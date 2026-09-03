@@ -71,13 +71,13 @@ export const getManagedUserIds = async (
 
   if (!departmentIds.length) {
     if (await DepartmentLeaderAssignment.count({ where: { user_id: managerId } })) return [];
-    const users = await User.findAll({ where: { status: 'active', ...legacyWhere }, attributes: ['id'] });
+    const users = await User.findAll({ where: { status: { [Op.ne]: 'inactive' }, ...legacyWhere }, attributes: ['id'] });
     return users.map((user) => user.id);
   }
 
   const candidates = await User.findAll({
     where: {
-      status: 'active',
+      status: { [Op.ne]: 'inactive' },
       id: { [Op.ne]: managerId },
       [Op.or]: [{ department_id: { [Op.in]: departmentIds } }, legacyWhere],
     },

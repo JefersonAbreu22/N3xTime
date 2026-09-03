@@ -1,510 +1,329 @@
-import { AlertTriangle, CheckCircle2, Clock3, FileText, MapPin, ShieldAlert, Umbrella, Users } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  Briefcase,
+  Building2,
+  CheckCircle2,
+  Clock3,
+  FileCheck2,
+  Home,
+  Stethoscope,
+  Umbrella,
+  UserCheck,
+  UserX,
+  type LucideIcon,
+} from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
-import { reportsApi } from '../../services/reportsApi';
+import { reportsApi, type HrSummaryResponse } from '../../services/reportsApi';
 import { recordsApi } from '../../services/recordsApi';
-import { usersApi } from '../../services/usersApi';
-import { formatMinutes, monthStartKey, recordTypeLabel, requestStatusLabel, requestTypeLabel, todayKey } from '../../components/dashboard/dashboardUtils';
+import { formatMinutes, methodLabel, monthStartKey, recordTypeLabel, todayKey } from '../../components/dashboard/dashboardUtils';
 import RemoteClockInModal from '../../components/dashboard/RemoteClockInModal';
 
-const EMPTY_COLLABORATORS: never[] = [];
-
-const Metric = ({
-  label,
-  value,
-  note,
-  tone = 'brand',
-  icon: Icon,
-}: {
-  label: string;
-  value: string | number;
-  note: string;
-  tone?: 'brand' | 'danger' | 'neutral';
-  icon: typeof Clock3;
-}) => {
-  const toneClass =
-    tone === 'danger'
-      ? 'text-[#b43737]'
-      : tone === 'neutral'
-        ? 'text-[#191717]'
-        : 'text-[#026666]';
-
-  return (
-    <div className="metric-card">
-      <div className="flex items-center justify-between">
-        <div className="metric-label">{label}</div>
-        <Icon className={`h-5 w-5 ${toneClass}`} />
-      </div>
-      <div className="metric-value">{value}</div>
-      <div className="mt-1.5 text-[12px] text-[#6e6a6a]">{note}</div>
-    </div>
-  );
-};
-
-const groupByDepartment = <T extends { departmentName: string; userName: string }>(collaborators: T[]) => {
-  const groups = new Map<string, T[]>();
-
-  for (const collaborator of collaborators) {
-    const departmentName = collaborator.departmentName || 'Sem setor';
-    const members = groups.get(departmentName) ?? [];
-    members.push(collaborator);
-    groups.set(departmentName, members);
-  }
-
-  return Array.from(groups.entries())
-    .map(([departmentName, members]) => [
-      departmentName,
-      members.sort((a, b) => a.userName.localeCompare(b.userName, 'pt-BR')),
-    ] as const)
-    .sort(([firstDepartment], [secondDepartment]) => firstDepartment.localeCompare(secondDepartment, 'pt-BR'));
-};
+type Summary = HrSummaryResponse['data'];
+type StatusPerson = NonNullable<Summary['todayWorkforce']>['statuses'][number];
+type TodayTimeRecordDepartment = NonNullable<Summary['todayTimeRecords']>[number];
+type RadarTone = 'danger' | 'warning' | 'teal' | 'blue' | 'purple' | 'neutral';
+type RadarPerson = { id: string | number; name: string; department: string; detail?: string; badge?: string };
 
 const initials = (name: string) =>
-  name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase();
+  name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+
+const greeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Bom dia';
+  if (hour < 18) return 'Boa tarde';
+  return 'Boa noite';
+};
+
+const todayLabel = () => {
+  const label = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }).format(new Date());
+  return label.charAt(0).toUpperCase() + label.slice(1);
+};
+
+const firstName = (name?: string) => name?.trim().split(' ')[0] || 'RH';
+const timeLabel = (value?: string | null) => value
+  ? new Date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  : '—';
+
+const radarStyles: Record<RadarTone, { icon: string; count: string; avatar: string; badge: string }> = {
+  danger: { icon: 'bg-[#fbebeb] text-[#b43737]', count: 'text-[#b43737]', avatar: 'border-[#efcece] bg-[#fff5f5] text-[#a33131]', badge: 'bg-[#fbebeb] text-[#a33131]' },
+  warning: { icon: 'bg-[#fff5df] text-[#9a6918]', count: 'text-[#9a6918]', avatar: 'border-[#ead8b0] bg-[#fff9ed] text-[#805816]', badge: 'bg-[#fff3d7] text-[#805816]' },
+  teal: { icon: 'bg-[#e7f5f3] text-[#026666]', count: 'text-[#026666]', avatar: 'border-[#bddbd7] bg-[#edf8f8] text-[#026666]', badge: 'bg-[#e7f5f3] text-[#026666]' },
+  blue: { icon: 'bg-[#eaf3fa] text-[#28658e]', count: 'text-[#28658e]', avatar: 'border-[#c7dceb] bg-[#f1f7fb] text-[#28658e]', badge: 'bg-[#eaf3fa] text-[#28658e]' },
+  purple: { icon: 'bg-[#f2ecf8] text-[#74528d]', count: 'text-[#74528d]', avatar: 'border-[#ddcfe8] bg-[#f8f4fb] text-[#74528d]', badge: 'bg-[#f2ecf8] text-[#74528d]' },
+  neutral: { icon: 'bg-[#f0eeee] text-[#625d5d]', count: 'text-[#4d4848]', avatar: 'border-[#ddd8d8] bg-[#f7f5f5] text-[#625d5d]', badge: 'bg-[#f0eeee] text-[#625d5d]' },
+};
+
+function RadarCard({ title, description, people, icon: Icon, tone, emptyText }: {
+  title: string;
+  description: string;
+  people: RadarPerson[];
+  icon: LucideIcon;
+  tone: RadarTone;
+  emptyText: string;
+}) {
+  const styles = radarStyles[tone];
+  return (
+    <section className="surface-panel flex min-h-[260px] flex-col overflow-hidden rounded-2xl">
+      <div className="flex items-start justify-between gap-4 border-b border-[#e7e4e4] p-4 md:p-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${styles.icon}`}><Icon className="h-4 w-4" /></span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-[#191717]">{title}</h2>
+            <p className="mt-1 text-[11px] leading-4 text-[#777171]">{description}</p>
+          </div>
+        </div>
+        <span className={`text-2xl font-semibold leading-none ${styles.count}`}>{people.length}</span>
+      </div>
+      {people.length ? (
+        <div className="max-h-[290px] flex-1 divide-y divide-[#ece9e9] overflow-y-auto">
+          {people.map((person) => (
+            <div key={person.id} className="flex items-center gap-3 px-4 py-3.5 md:px-5">
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${styles.avatar}`}>{initials(person.name)}</span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-semibold text-[#282525]">{person.name}</div>
+                <div className="mt-0.5 truncate text-[10px] text-[#817b7b]">{person.department}{person.detail ? ` · ${person.detail}` : ''}</div>
+              </div>
+              {person.badge && <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-semibold ${styles.badge}`}>{person.badge}</span>}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-1 items-center justify-center px-6 py-8 text-center">
+          <div><CheckCircle2 className="mx-auto h-5 w-5 text-[#168077]" /><p className="mt-2 text-xs font-medium text-[#5f7774]">{emptyText}</p></div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const timeRecordTone = (recordType: string) => {
+  if (recordType === 'entry') return 'border-[#b9d9d5] bg-[#edf8f8] text-[#026666]';
+  if (recordType === 'lunch_start') return 'border-[#ead8b0] bg-[#fff8e8] text-[#8b641e]';
+  if (recordType === 'lunch_end') return 'border-[#c7dceb] bg-[#f1f7fb] text-[#28658e]';
+  if (recordType === 'exit') return 'border-[#ddd8d8] bg-[#f6f4f4] text-[#514c4c]';
+  return 'border-[#d9d0e2] bg-[#f5f0f8] text-[#74528d]';
+};
+
+const compactRecordTypeLabel = (recordType: string) => {
+  if (recordType === 'entry') return 'Entrada';
+  if (recordType === 'lunch_start') return 'Almoço';
+  if (recordType === 'lunch_end') return 'Retorno';
+  if (recordType === 'exit') return 'Saída';
+  return 'Auto';
+};
+
+function TimeRecordsByDepartment({ departments }: { departments: TodayTimeRecordDepartment[] }) {
+  const collaboratorCount = departments.reduce((total, department) => total + department.collaborators.length, 0);
+  const recordCount = departments.reduce((total, department) => total + department.collaborators.reduce((subtotal, collaborator) => subtotal + collaborator.records.length, 0), 0);
+
+  return (
+    <section className="surface-panel overflow-hidden rounded-2xl">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e7e4e4] px-4 py-3 md:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e7f5f3] text-[#026666]"><Clock3 className="h-4 w-4" /></span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-2"><span className="section-kicker">Batidas de hoje</span><h2 className="text-sm font-semibold text-[#191717]">Horários por setor</h2></div>
+            <p className="mt-0.5 hidden text-[10px] text-[#777171] sm:block">Atualização automática junto com o radar.</p>
+          </div>
+        </div>
+        <div className="text-[10px] font-semibold text-[#6e6a6a]"><span className="text-[#191717]">{collaboratorCount}</span> pessoas <span className="mx-1 text-[#c5c0c0]">·</span> <span className="text-[#026666]">{recordCount}</span> batidas</div>
+      </div>
+
+      {departments.length ? (
+        <div className="max-h-[420px] overflow-y-auto">
+          {departments.map((department) => (
+            <article key={department.departmentId ?? 'none'} className="border-b border-[#e7e4e4] last:border-b-0">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[#ece9e9] bg-[#f8fcfc] px-4 py-2 md:px-5">
+                <div className="flex min-w-0 items-center gap-2"><Building2 className="h-3.5 w-3.5 shrink-0 text-[#026666]" /><h3 className="truncate text-[11px] font-semibold text-[#282525]">{department.departmentName}</h3></div>
+                <span className="shrink-0 text-[9px] text-[#777171]">{department.collaborators.length} pessoa(s)</span>
+              </div>
+              <div className="divide-y divide-[#f0eeee]">
+                {department.collaborators.map((collaborator) => (
+                  <div key={collaborator.userId} className="grid gap-2 px-4 py-2.5 md:grid-cols-[minmax(170px,0.65fr)_minmax(0,1.35fr)] md:items-center md:px-5">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#ddd8d8] bg-[#f6f4f4] text-[9px] font-bold text-[#514c4c]">{initials(collaborator.userName)}</span>
+                      <div className="min-w-0"><div className="truncate text-[11px] font-semibold text-[#282525]">{collaborator.userName}</div><div className="truncate text-[9px] text-[#817b7b]">Mat. {collaborator.registrationNumber}</div></div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 md:justify-end">
+                      {collaborator.records.map((record) => (
+                        <span key={record.id} className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[10px] leading-none ${timeRecordTone(record.recordType)}`} title={`${recordTypeLabel(record.recordType)} · ${methodLabel(record.method)}`}>
+                          <span className="font-medium opacity-75">{compactRecordTypeLabel(record.recordType)}</span><strong className="text-[11px]">{timeLabel(record.recordTime)}</strong><span className="hidden text-[9px] opacity-60 2xl:inline">{methodLabel(record.method)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : <div className="px-6 py-7 text-center text-xs text-[#6e6a6a]">Nenhuma batida registrada hoje.</div>}
+    </section>
+  );
+}
+
+const approvedByType = (statuses: StatusPerson[], requestType: StatusPerson['requestType']) =>
+  statuses.filter((person) => person.requestStatus === 'approved' && person.requestType === requestType);
+
+function ManagementOverview({ summary, userName, canManageTeam }: { summary?: Summary; userName?: string; canManageTeam: boolean }) {
+  const metrics = summary?.metrics;
+  const present = summary?.todayWorkforce?.present ?? [];
+  const statuses = summary?.todayWorkforce?.statuses ?? [];
+  const missingClockIns = summary?.missingClockIns ?? [];
+  const lateArrivals = summary?.lateArrivals ?? [];
+  const todayTimeRecords = summary?.todayTimeRecords ?? [];
+  const vacations = approvedByType(statuses, 'vacation');
+  const medicalLeaves = approvedByType(statuses, 'medical_certificate');
+  const externalWorkers = approvedByType(statuses, 'external_work');
+  const daysOff = approvedByType(statuses, 'day_off');
+  const declarations = approvedByType(statuses, 'declaration');
+  const homeWorkers = present.filter((person) => person.isRemote || person.workType === 'remote');
+  const pendingToday = statuses.filter((person) => person.requestStatus === 'pending').length;
+  const attentionCount = missingClockIns.length + lateArrivals.length + pendingToday;
+  const statusPeople = (items: StatusPerson[], badge: string): RadarPerson[] => items.map((person) => ({
+    id: `${person.requestType}-${person.userId}`,
+    name: person.userName,
+    department: person.departmentName,
+    badge,
+  }));
+
+  const quickActions = [
+    ['/dashboard/pending', 'Resolver pendências', 'Aprovações e registros'],
+    ...(canManageTeam ? [['/dashboard/team/restrictions', 'Vínculos e afastamentos', 'Situações e retornos']] : []),
+    ['/dashboard/analytics', 'Ir para análises', 'Histórico e indicadores'],
+  ];
+
+  return (
+    <div className="space-y-5 pb-4 font-sans">
+      <section className="page-hero rounded-2xl">
+        <div className="grid lg:grid-cols-[1fr_auto]">
+          <div className="p-5 md:p-6">
+            <div className="page-eyebrow">{todayLabel()}</div>
+            <h1 className="page-title">{greeting()}, {firstName(userName)}. Este é o radar de hoje.</h1>
+            <p className="page-description">Pessoas fora do fluxo esperado, ausências justificadas e equipes trabalhando fora da empresa, sem misturar com análises históricas.</p>
+          </div>
+          <div className="flex items-center border-t border-[#e7e4e4] bg-[#f8fcfc] px-5 py-4 lg:min-w-64 lg:border-l lg:border-t-0 lg:px-6">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6e6a6a]">Precisam de atenção</div>
+              <div className="mt-2 flex items-end gap-2"><span className={`text-4xl font-semibold ${attentionCount ? 'text-[#b43737]' : 'text-[#026666]'}`}>{attentionCount}</span><span className="mb-1 text-xs text-[#6e6a6a]">sinal(is)</span></div>
+              <div className="mt-2 flex items-center gap-2 text-[10px] text-[#777171]"><span className={`h-2 w-2 rounded-full ${attentionCount ? 'bg-[#b43737]' : 'bg-[#168077]'}`} />Atualização automática a cada minuto</div>
+            </div>
+          </div>
+        </div>
+        <div className="grid border-t border-[#e7e4e4] sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ['Na operação', metrics?.presentToday ?? 0, 'com registro hoje', 'text-[#026666]'],
+            ['Sem ponto', missingClockIns.length, 'após o horário', 'text-[#b43737]'],
+            ['Atrasados', lateArrivals.length, 'fora da tolerância', 'text-[#9a6918]'],
+            ['Para aprovar', metrics?.pendingApprovals ?? 0, 'itens pendentes', 'text-[#74528d]'],
+          ].map(([label, value, note, color], index) => (
+            <div key={String(label)} className={`px-5 py-4 ${index < 3 ? 'border-b border-[#e7e4e4] sm:border-r xl:border-b-0' : ''}`}>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#777171]">{label}</div>
+              <div className="mt-2 flex items-end justify-between gap-3"><span className={`text-2xl font-semibold ${color}`}>{value}</span><span className="mb-0.5 text-[10px] text-[#8a8585]">{note}</span></div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <nav className={`surface-panel grid overflow-hidden rounded-2xl ${quickActions.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`} aria-label="Ações rápidas">
+        {quickActions.map(([path, title, description], index) => (
+          <Link key={path} to={path} className={`group flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-[#f6f4f4] ${index < quickActions.length - 1 ? 'border-b border-[#e7e4e4] sm:border-b-0 sm:border-r' : ''}`}>
+            <span><span className="block text-xs font-semibold text-[#191717]">{title}</span><span className="mt-1 block text-[10px] text-[#6e6a6a]">{description}</span></span>
+            <ArrowUpRight className="h-4 w-4 text-[#8a8585] transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[#026666]" />
+          </Link>
+        ))}
+      </nav>
+
+      <TimeRecordsByDepartment departments={todayTimeRecords} />
+
+      <div>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3 px-1">
+          <div><div className="section-kicker">Movimento de hoje</div><h2 className="mt-1 text-xl font-semibold text-[#191717]">Quem está onde — e quem saiu da linha</h2></div>
+          <span className="text-xs text-[#777171]">Somente situações do dia atual</span>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          <RadarCard title="Sem ponto / possível falta" description="Já passou do horário de entrada e não há registro." icon={UserX} tone="danger" emptyText="Ninguém sem ponto neste momento." people={missingClockIns.map((person) => ({ id: person.userId, name: person.userName, department: person.departmentName, detail: `entrada prevista ${person.scheduleEntryTime}`, badge: person.delayMinutes !== undefined ? `+${formatMinutes(person.delayMinutes)}` : 'sem ponto' }))} />
+          <RadarCard title="Chegaram atrasados" description="Entrada registrada depois da tolerância configurada." icon={AlertTriangle} tone="warning" emptyText="Nenhum atraso registrado hoje." people={lateArrivals.map((person) => ({ id: person.userId, name: person.userName, department: person.departmentName, detail: `entrou ${timeLabel(person.actualEntryTime)} · previsto ${person.scheduleEntryTime}`, badge: `+${formatMinutes(person.delayMinutes)}` }))} />
+          <RadarCard title="Em home office" description="Pessoas remotas com movimentação registrada hoje." icon={Home} tone="blue" emptyText="Ninguém identificado em home office." people={homeWorkers.map((person) => ({ id: person.userId, name: person.userName, department: person.departmentName, detail: recordTypeLabel(person.lastRecordType), badge: timeLabel(person.lastRecordAt) }))} />
+          <RadarCard title="Em trabalho externo" description="Atividade externa aprovada para a data de hoje." icon={Briefcase} tone="teal" emptyText="Ninguém em trabalho externo hoje." people={statusPeople(externalWorkers, 'externo')} />
+          <RadarCard title="De férias" description="Ausências planejadas e aprovadas para hoje." icon={Umbrella} tone="purple" emptyText="Ninguém de férias hoje." people={statusPeople(vacations, 'férias')} />
+          <RadarCard title="Com atestado médico" description="Afastamentos médicos aprovados para o dia inteiro." icon={Stethoscope} tone="neutral" emptyText="Nenhum atestado vigente hoje." people={statusPeople(medicalLeaves, 'abonado')} />
+          <RadarCard title="Em folga" description="Folgas aprovadas para a jornada de hoje." icon={UserCheck} tone="teal" emptyText="Ninguém em folga hoje." people={statusPeople(daysOff, 'folga')} />
+          <RadarCard title="Com declaração" description="Comparecimento com intervalo de horas abonado." icon={FileCheck2} tone="blue" emptyText="Nenhuma declaração aprovada hoje." people={statusPeople(declarations, 'horas abonadas')} />
+        </div>
+      </div>
+
+      {(pendingToday > 0 || (summary?.exceptionQueue.length ?? 0) > 0) && (
+        <section className="surface-panel flex flex-col gap-4 rounded-2xl border-l-4 border-l-[#9a6918] p-4 sm:flex-row sm:items-center sm:justify-between md:p-5">
+          <div><div className="text-sm font-semibold text-[#191717]">Ainda existem decisões esperando você</div><p className="mt-1 text-xs text-[#6e6a6a]">{pendingToday} solicitação(ões) de hoje e {summary?.exceptionQueue.length ?? 0} registro(s) com exceção.</p></div>
+          <Link to="/dashboard/pending" className="btn-secondary shrink-0">Abrir fila de pendências</Link>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function EmployeeOverview({ userName, bank, cumulativeBank, latestRecord, remoteEnabled, onRemoteClockIn }: {
+  userName?: string;
+  bank?: Summary['bankHours'];
+  cumulativeBank?: Summary['bankHours'];
+  latestRecord?: { record_type: string; record_time: string };
+  remoteEnabled?: boolean;
+  onRemoteClockIn: () => void;
+}) {
+  const today = bank?.latestDailyBalance;
+  return (
+    <div className="space-y-5 font-sans">
+      <section className="page-hero rounded-2xl p-5 md:p-6">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#026666]">{todayLabel()}</div>
+        <h2 className="mt-5 max-w-2xl text-3xl font-semibold tracking-[-0.04em] text-[#191717] md:text-4xl">{greeting()}, {firstName(userName)}.</h2>
+        <p className="mt-3 text-sm text-[#6e6a6a]">Sua jornada, sem ruído: marcações, saldo e o que ainda falta cumprir hoje.</p>
+        {remoteEnabled && <button onClick={onRemoteClockIn} className="btn-primary mt-5"><Clock3 className="h-4 w-4" />Registrar ponto</button>}
+      </section>
+      <section className="surface-panel grid overflow-hidden rounded-2xl sm:grid-cols-2 xl:grid-cols-5">
+        {[
+          ['Horas hoje', formatMinutes(today?.workedMinutes ?? 0), 'jornada realizada'],
+          ['Restante hoje', formatMinutes(Math.max((today?.expectedMinutes ?? 0) - (today?.workedMinutes ?? 0), 0)), 'carga prevista'],
+          ['Saldo do mês', formatMinutes(bank?.balanceMinutesTotal ?? 0), 'competência atual'],
+          ['Saldo geral', formatMinutes(cumulativeBank?.balanceMinutesTotal ?? 0), 'banco acumulado'],
+          ['Última marcação', latestRecord ? recordTypeLabel(latestRecord.record_type) : '—', latestRecord ? new Date(latestRecord.record_time).toLocaleString('pt-BR') : 'sem movimentação'],
+        ].map(([label, value, note], index) => <div key={label} className={`p-5 ${index < 4 ? 'border-b border-[#e7e4e4] sm:border-r xl:border-b-0' : ''}`}><div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6e6a6a]">{label}</div><div className="mt-3 text-xl font-semibold text-[#191717]">{value}</div><div className="mt-2 text-[10px] text-[#8a8585]">{note}</div></div>)}
+      </section>
+      <section className="grid gap-5 md:grid-cols-2">
+        <Link to="/dashboard/my-point" className="surface-panel group rounded-2xl p-6 transition-colors hover:bg-[#f8fcfc]"><div className="flex items-center justify-between"><Clock3 className="h-5 w-5 text-[#026666]" /><ArrowUpRight className="h-4 w-4 text-[#8a8585]" /></div><h3 className="mt-8 text-xl font-semibold text-[#191717]">Meu espelho de ponto</h3><p className="mt-2 text-xs leading-5 text-[#6e6a6a]">Consulte a sequência completa de marcações e o saldo diário.</p></Link>
+        <Link to="/dashboard/requests" className="surface-panel group rounded-2xl p-6 transition-colors hover:bg-[#f8fcfc]"><div className="flex items-center justify-between"><FileCheck2 className="h-5 w-5 text-[#026666]" /><ArrowUpRight className="h-4 w-4 text-[#8a8585]" /></div><h3 className="mt-8 text-xl font-semibold text-[#191717]">Solicitações e documentos</h3><p className="mt-2 text-xs leading-5 text-[#6e6a6a]">Envie ajustes, atestados e declarações de comparecimento.</p></Link>
+      </section>
+    </div>
+  );
+}
 
 export default function OverviewPage() {
   const auth = useAuthStore();
   const role = auth.user?.role ?? 'employee';
   const isManagement = role === 'manager' || role === 'admin';
-  const isAdmin = role === 'admin';
+  const canManageTeam = role === 'admin' || Boolean(auth.user?.leadership_permissions?.includes('manage_team'));
   const [isRemoteModalOpen, setIsRemoteModalOpen] = useState(false);
 
   const hrSummary = useQuery({
-    queryKey: ['overview', 'hr-summary', todayKey()],
-    queryFn: async () => reportsApi.hrSummary({ startDate: monthStartKey(), endDate: todayKey() }),
+    queryKey: ['overview', 'hr-summary', role, todayKey()],
+    queryFn: () => reportsApi.hrSummary({ startDate: isManagement ? todayKey() : monthStartKey(), endDate: todayKey(), operationalOnly: isManagement }),
     enabled: !!auth.token,
+    refetchInterval: isManagement ? 60_000 : false,
   });
-
-  const cumulativeBankHours = useQuery({
-    queryKey: ['my-point', 'cumulative-bank-hours'],
-    queryFn: () => reportsApi.cumulativeBankHours(),
-    enabled: !!auth.token && role === 'employee',
-  });
-
-  const recent = useQuery({
-    queryKey: ['overview', 'recent-records'],
-    queryFn: async () => {
-      const res = role === 'employee' ? await recordsApi.myRecords() : await recordsApi.recent();
-      return res.data;
-    },
-    enabled: !!auth.token,
-  });
-
-  const teamCount = useQuery({
-    queryKey: ['overview', 'team-count'],
-    queryFn: async () => {
-      const res = await usersApi.team();
-      return res.data.length;
-    },
-    enabled: !!auth.token && isManagement,
-  });
-
-  const monthlyClosures = useQuery({
-    queryKey: ['overview', 'monthly-closures'],
-    queryFn: async () => reportsApi.monthlyClosures(),
-    enabled: !!auth.token && isAdmin,
-  });
-
+  const cumulativeBankHours = useQuery({ queryKey: ['my-point', 'cumulative-bank-hours'], queryFn: () => reportsApi.cumulativeBankHours(), enabled: !!auth.token && role === 'employee' });
+  const recent = useQuery({ queryKey: ['overview', 'recent-records'], queryFn: async () => (await recordsApi.myRecords()).data, enabled: !!auth.token && role === 'employee' });
   const summary = hrSummary.data?.data;
-  const bank = summary?.bankHours;
-  const cumulativeBank = cumulativeBankHours.data?.data.bankHours;
-  const latestDailyBalance = bank?.latestDailyBalance;
-  const employeeLatestRecord = recent.data?.[0];
-  const currentClosure = monthlyClosures.data?.data.find((item) => item.isCurrentMonth);
-  const presentByDepartment = useMemo(
-    () => groupByDepartment(summary?.todayWorkforce?.present ?? []),
-    [summary?.todayWorkforce?.present]
-  );
-  const statusesByDepartment = useMemo(
-    () => groupByDepartment(summary?.todayWorkforce?.statuses ?? []),
-    [summary?.todayWorkforce?.statuses]
-  );
-  const absentToday = summary?.todayWorkforce?.absent ?? EMPTY_COLLABORATORS;
-  const absentByDepartment = useMemo(
-    () => groupByDepartment(absentToday),
-    [absentToday]
-  );
-
-  const heroTitle =
-    role === 'employee'
-      ? 'Sua rotina de ponto em um só lugar'
-      : role === 'manager'
-        ? 'Sua operação de equipe, com foco no que exige ação'
-        : 'Visão operacional de RH e fechamento';
-  const heroDescription =
-    role === 'employee'
-      ? 'Acompanhe horas do dia, saldo do banco, última marcação e pedidos pendentes.'
-      : role === 'manager'
-        ? 'Priorize aprovações, atrasos, faltas e exceções sem navegar entre módulos desconectados.'
-        : 'Consolide fechamento, banco de horas geral, alertas e indicadores da empresa em uma home mais operacional.';
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Bom dia';
-    if (hour < 18) return 'Boa tarde';
-    return 'Boa noite';
-  };
 
   return (
-    <div className="space-y-6">
-      <div className="mb-2">
-        <h1 className="text-2xl font-bold tracking-[-0.03em] text-[#191717]">
-          {getGreeting()}, {auth.user?.name?.split(' ')[0] ?? 'Colaborador'}!
-        </h1>
-      </div>
-
-      {auth.user?.remote_clock_in_enabled && (
-        <section className="bg-white border border-[#e7e4e4] rounded-2xl p-5 md:p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#191717]">Registro de Ponto</h2>
-            <p className="text-[#6e6a6a] mt-1 text-sm">Registre seu ponto remotamente de forma rápida e segura.</p>
-          </div>
-          <button 
-            onClick={() => setIsRemoteModalOpen(true)}
-            className="w-full md:w-auto bg-[#026666] hover:bg-[#014d4d] text-white px-8 py-3 rounded-xl font-semibold text-[15px] shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-          >
-            <Clock3 className="h-5 w-5" />
-            Registrar Ponto
-          </button>
-        </section>
+    <>
+      {isManagement ? <ManagementOverview summary={summary} userName={auth.user?.name} canManageTeam={canManageTeam} /> : (
+        <EmployeeOverview userName={auth.user?.name} bank={summary?.bankHours} cumulativeBank={cumulativeBankHours.data?.data.bankHours} latestRecord={recent.data?.[0]} remoteEnabled={auth.user?.remote_clock_in_enabled} onRemoteClockIn={() => setIsRemoteModalOpen(true)} />
       )}
-
-      <section className="page-hero">
-        <div className="page-hero-grid">
-          <div className="border-b border-[#e7e4e4] p-5 md:p-6 xl:border-b-0 xl:border-r">
-            <div className="page-eyebrow">{role === 'employee' ? 'Colaborador' : role === 'manager' ? 'Liderança' : 'RH/Admin'}</div>
-            <h2 className="page-title">{heroTitle}</h2>
-            <p className="page-description">{heroDescription}</p>
-          </div>
-          <div className="p-5 md:p-6">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6e6a6a]">Último destaque</div>
-            <div className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[#191717]">
-              {role === 'employee'
-                ? employeeLatestRecord
-                  ? recordTypeLabel(employeeLatestRecord.record_type)
-                  : 'Sem marcações recentes'
-                : `${summary?.metrics.pendingApprovals ?? 0} aprovações pendentes`}
-            </div>
-            <div className="mt-2 text-sm leading-6 text-[#6e6a6a]">
-              {role === 'employee'
-                ? employeeLatestRecord
-                  ? new Date(employeeLatestRecord.record_time).toLocaleString()
-                  : 'Nenhuma movimentação disponível.'
-                : `${summary?.metrics.lateToday ?? 0} atrasos, ${summary?.metrics.missingToday ?? 0} ausências e ${summary?.exceptionQueue.length ?? 0} exceções monitoradas.`}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {isManagement && summary?.missingClockIns && summary.missingClockIns.length > 0 && (
-        <section className="surface-panel p-5 md:p-6 border-l-4 border-[#b43737]">
-          <div className="flex items-center gap-2 mb-4">
-            <ShieldAlert className="h-5 w-5 text-[#b43737]" />
-            <h3 className="text-lg font-semibold text-[#191717]">Alertas de Esquecimento de Ponto</h3>
-          </div>
-          <p className="text-sm text-[#6e6a6a] mb-4">
-            Os seguintes colaboradores não registraram o ponto no horário esperado hoje. Entre em contato para solicitar o ajuste de ponto na plataforma.
-          </p>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {summary.missingClockIns.map((missing: { userId: number; userName: string; departmentName: string; scheduleEntryTime: string; delayMinutes?: number }) => (
-              <div key={missing.userId} className="flex flex-col rounded-xl border border-[#f0dede] bg-[#fbf1f1] p-4 text-[#b43737]">
-                <div className="font-semibold">{missing.userName}</div>
-                <div className="text-sm opacity-90 mt-1">{missing.departmentName}</div>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <div className="text-xs font-medium bg-white/50 px-2 py-1 rounded">
-                    Entrada esperada: {missing.scheduleEntryTime}
-                  </div>
-                  {missing.delayMinutes !== undefined && (
-                    <div className="text-xs font-medium bg-[#b43737]/10 text-[#b43737] px-2 py-1 rounded">
-                      Atraso: {formatMinutes(missing.delayMinutes)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {isManagement && summary?.todayWorkforce && (
-        <section className="space-y-5">
-          <div className="overflow-hidden rounded-2xl border border-[#dceaea] bg-white p-5 shadow-sm md:p-6">
-            <div className="-mx-5 -mt-5 mb-5 flex items-start justify-between gap-4 border-b border-[#dceaea] bg-gradient-to-br from-[#edf8f8] via-[#f8fcfc] to-white px-5 py-5 md:-mx-6 md:-mt-6 md:px-6">
-              <div>
-                <div className="section-kicker">Acompanhamento de hoje</div>
-                <h3 className="mt-1 text-lg font-semibold text-[#191717]">Colaboradores presentes</h3>
-                <p className="mt-1 text-sm text-[#6e6a6a]">Última marcação registrada para cada pessoa em atividade.</p>
-              </div>
-              <span className="status-chip border-[#dceaea] bg-[#edf8f8] text-[#026666]">{summary.todayWorkforce.present.length} presente(s)</span>
-            </div>
-            <div className="mt-5 space-y-4">
-              {presentByDepartment.map(([departmentName, collaborators]) => (
-                <div key={departmentName} className="rounded-xl border border-[#dceaea] bg-[#f8fcfc] p-3">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <h4 className="text-sm font-semibold text-[#191717]">{departmentName}</h4>
-                    <span className="text-xs font-medium text-[#6e6a6a]">{collaborators.length} presente(s)</span>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                    {collaborators.map((collaborator) => (
-                <div key={collaborator.userId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white bg-white px-3 py-3 shadow-sm transition-shadow hover:shadow-md">
-                  <div>
-                    <div className="flex items-center gap-2 font-semibold text-[#191717]"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#dff1f1] text-[10px] font-bold text-[#026666]">{initials(collaborator.userName)}</span>{collaborator.userName}</div>
-                    <div className="mt-1 text-xs text-[#6e6a6a]">{collaborator.departmentName} · {recordTypeLabel(collaborator.lastRecordType)}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {collaborator.isRemote && <span className="status-chip border-[#c8e7e7] bg-[#edf8f8] text-[#026666]"><MapPin className="h-3.5 w-3.5" /> Remoto</span>}
-                    <span className="text-sm font-semibold text-[#191717]">{new Date(collaborator.lastRecordAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {!summary.todayWorkforce.present.length && <div className="surface-muted p-4 text-sm text-[#6e6a6a]">Nenhuma presença com ponto registrado até o momento.</div>}
-            </div>
-          </div>
-
-          <div className="grid items-start gap-5 xl:grid-cols-2">
-          <div className="overflow-hidden rounded-2xl border border-[#e7e4e4] bg-white p-5 shadow-sm md:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="section-kicker">Status vinculado ao ponto</div>
-                <h3 className="mt-1 text-lg font-semibold text-[#191717]">Folgas, afastamentos e trabalho externo</h3>
-                <p className="mt-1 text-sm text-[#6e6a6a]">Situações lançadas para hoje, inclusive solicitações em aprovação.</p>
-              </div>
-              <span className="status-chip border-[#ece8e8] bg-[#f6f4f4] text-[#191717]">{summary.todayWorkforce.statuses.length} status</span>
-            </div>
-            <div className="mt-5 space-y-3">
-              {statusesByDepartment.map(([departmentName, collaborators]) => (
-                <div key={departmentName} className="rounded-xl border border-[#e7e4e4] bg-[#faf9f9] p-3">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <h4 className="text-sm font-semibold text-[#191717]">{departmentName}</h4>
-                    <span className="text-xs font-medium text-[#6e6a6a]">{collaborators.length} status</span>
-                  </div>
-                  <div className="space-y-3">
-                    {collaborators.map((collaborator) => (
-                <div key={collaborator.userId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white bg-white px-3 py-3 shadow-sm transition-shadow hover:shadow-md">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 font-semibold text-[#191717]"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#ece8e8] text-[10px] font-bold text-[#4c4848]">{initials(collaborator.userName)}</span>{collaborator.userName}</div>
-                    <div className="mt-1 text-xs text-[#6e6a6a]">{collaborator.departmentName} · {collaborator.reason}</div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="status-chip border-[#ece8e8] bg-[#f6f4f4] text-[#191717]"><Umbrella className="h-3.5 w-3.5" /> {requestTypeLabel(collaborator.requestType)}</span>
-                    <span className={`status-chip ${collaborator.requestStatus === 'approved' ? 'border-[#dceaea] bg-[#edf8f8] text-[#026666]' : collaborator.requestStatus === 'rejected' ? 'border-[#f0dede] bg-[#fbf1f1] text-[#b43737]' : 'border-[#ece8e8] bg-[#f6f4f4] text-[#191717]'}`}>{requestStatusLabel(collaborator.requestStatus)}</span>
-                    {collaborator.isRemote && <span className="status-chip border-[#c8e7e7] bg-[#edf8f8] text-[#026666]"><MapPin className="h-3.5 w-3.5" /> Ponto remoto</span>}
-                  </div>
-                </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {!summary.todayWorkforce.statuses.length && <div className="surface-muted p-4 text-sm text-[#6e6a6a]">Nenhuma folga, afastamento ou trabalho externo lançado para hoje.</div>}
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-2xl border border-[#f0dede] bg-white p-5 shadow-sm md:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="section-kicker">Acompanhamento de hoje</div>
-                <h3 className="mt-1 text-lg font-semibold text-[#191717]">Colaboradores com falta</h3>
-                <p className="mt-1 text-sm text-[#6e6a6a]">Sem marcação e sem ocorrência vinculada para a jornada de hoje.</p>
-              </div>
-              <span className="status-chip border-[#f0dede] bg-[#fbf1f1] text-[#b43737]">{absentToday.length} falta(s)</span>
-            </div>
-            <div className="mt-5 space-y-5">
-              {absentByDepartment.map(([departmentName, collaborators]) => (
-                <div key={departmentName} className="rounded-xl border border-[#f0dede] bg-[#fffafa] p-3">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <h4 className="text-sm font-semibold text-[#191717]">{departmentName}</h4>
-                    <span className="text-xs font-medium text-[#6e6a6a]">{collaborators.length} falta(s)</span>
-                  </div>
-                  <div className="space-y-3">
-                    {collaborators.map((collaborator) => (
-                      <div key={collaborator.userId} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white bg-white px-3 py-3 shadow-sm transition-shadow hover:shadow-md">
-                        <div>
-                            <div className="flex items-center gap-2 font-semibold text-[#191717]"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f9dddd] text-[10px] font-bold text-[#b43737]">{initials(collaborator.userName)}</span>{collaborator.userName}</div>
-                          <div className="mt-1 text-xs text-[#6e6a6a]">Entrada prevista: {collaborator.scheduleEntryTime}</div>
-                        </div>
-                        <span className="status-chip border-[#f0dede] bg-white text-[#b43737]"><AlertTriangle className="h-3.5 w-3.5" /> Sem registro</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {!absentToday.length && <div className="surface-muted p-4 text-sm text-[#6e6a6a]">Nenhuma falta identificada para as jornadas previstas hoje.</div>}
-            </div>
-          </div>
-          </div>
-        </section>
-      )}
-
-      {role === 'employee' ? (
-        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <Metric
-            label="Horas Hoje"
-            value={formatMinutes(latestDailyBalance?.workedMinutes ?? 0)}
-            note="Trabalhadas no dia de hoje."
-            icon={Clock3}
-          />
-          <Metric
-            label="Trabalhadas no Mês"
-            value={formatMinutes(bank?.workedMinutesTotal ?? 0)}
-            note="Total de horas trabalhadas no período atual."
-            icon={CheckCircle2}
-          />
-          <Metric
-            label="Horas Restantes Hoje"
-            value={formatMinutes(Math.max((latestDailyBalance?.expectedMinutes ?? 0) - (latestDailyBalance?.workedMinutes ?? 0), 0))}
-            note="Jornada prevista ainda a ser cumprida hoje."
-            tone="neutral"
-            icon={Clock3}
-          />
-          <Metric
-            label="Saldo do Mês"
-            value={formatMinutes(bank?.balanceMinutesTotal ?? 0)}
-            note="Resultado acumulado no mês atual."
-            tone={((bank?.balanceMinutesTotal ?? 0) < 0) ? 'danger' : 'brand'}
-            icon={Clock3}
-          />
-          <Metric
-            label="Saldo Geral"
-            value={formatMinutes(cumulativeBank?.balanceMinutesTotal ?? 0)}
-            note="Acumulado desde o início do banco de horas."
-            tone={((cumulativeBank?.balanceMinutesTotal ?? 0) < 0) ? 'danger' : 'brand'}
-            icon={Clock3}
-          />
-        </section>
-      ) : (
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric
-            label="Pendências de Aprovação"
-            value={summary?.metrics.pendingApprovals ?? 0}
-            note="Ajustes, documentos e solicitações em fila."
-            tone={(summary?.metrics.pendingApprovals ?? 0) > 0 ? 'danger' : 'brand'}
-            icon={FileText}
-          />
-          <Metric
-            label="Esquecimentos de Ponto"
-            value={summary?.missingClockIns?.length ?? 0}
-            note="Colaboradores que não bateram ponto hoje."
-            tone={(summary?.missingClockIns?.length ?? 0) > 0 ? 'danger' : 'brand'}
-            icon={AlertTriangle}
-          />
-          <Metric
-            label="Pessoas Atrasadas"
-            value={summary?.metrics.lateToday ?? 0}
-            note="Entradas fora da tolerância configurada."
-            tone={(summary?.metrics.lateToday ?? 0) > 0 ? 'danger' : 'brand'}
-            icon={Clock3}
-          />
-          <Metric
-            label="Faltas Hoje"
-            value={summary?.metrics.missingToday ?? 0}
-            note="Sem registro de entrada até o momento."
-            tone={(summary?.metrics.missingToday ?? 0) > 0 ? 'danger' : 'neutral'}
-            icon={Users}
-          />
-        </section>
-      )}
-
-      {isAdmin && (
-        <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <Metric
-            label="Fechamento Atual"
-            value={currentClosure?.status === 'closed' ? 'Fechado' : 'Aberto'}
-            note={currentClosure ? `${currentClosure.periodLabel}` : 'Competência atual ainda não encontrada.'}
-            tone={currentClosure?.status === 'closed' ? 'brand' : 'danger'}
-            icon={ShieldAlert}
-          />
-          <Metric
-            label="Banco Geral"
-            value={formatMinutes(bank?.balanceMinutesTotal ?? 0)}
-            note="Saldo agregado do período consultado."
-            icon={Clock3}
-          />
-          <Metric
-            label="Colaboradores"
-            value={summary?.metrics.totalEmployees ?? 0}
-            note="Base ativa considerada na visão operacional."
-            tone="neutral"
-            icon={Users}
-          />
-        </section>
-      )}
-
-      <section className="section-card">
-        <div className="section-header">
-          <div>
-            <div className="section-kicker">{isManagement ? 'Indicadores' : 'Resumo pessoal'}</div>
-            <h3 className="section-title">{isManagement ? 'Estado da operação' : 'Situação da sua jornada'}</h3>
-            <p className="section-note">
-              {isManagement
-                ? 'Dados imediatos para decidir o que deve ser tratado agora.'
-                : 'Resumo consolidado para consulta rápida antes de entrar nos detalhes do ponto.'}
-            </p>
-          </div>
-        </div>
-
-        {isManagement ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="insight-card">
-              <div className="metric-label">Equipe monitorada</div>
-              <div className="mt-2 text-xl font-semibold text-[#191717]">{teamCount.data ?? 0}</div>
-              <div className="kpi-caption">Pessoas visíveis dentro do escopo atual.</div>
-            </div>
-            <div className="insight-card">
-              <div className="metric-label">Falhas biométricas</div>
-              <div className="mt-2 text-xl font-semibold text-[#191717]">{summary?.metrics.biometricFailures ?? 0}</div>
-              <div className="kpi-caption">Eventos que merecem investigação operacional.</div>
-            </div>
-            <div className="insight-card">
-              <div className="metric-label">PIN contingência</div>
-              <div className="mt-2 text-xl font-semibold text-[#191717]">{summary?.metrics.pinFallbacks ?? 0}</div>
-              <div className="kpi-caption">Uso de fallback no período analisado.</div>
-            </div>
-            <div className="insight-card">
-              <div className="metric-label">Registros ajustados</div>
-              <div className="mt-2 text-xl font-semibold text-[#191717]">{summary?.metrics.adjustedRecords ?? 0}</div>
-              <div className="kpi-caption">Marcações alteradas após revisão.</div>
-            </div>
-          </div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="insight-card">
-              <div className="metric-label">Horas extras</div>
-              <div className="mt-2 text-xl font-semibold text-[#191717]">{formatMinutes(Math.max(bank?.balanceMinutesTotal ?? 0, 0))}</div>
-              <div className="kpi-caption">Total excedente acumulado.</div>
-            </div>
-            <div className="insight-card">
-              <div className="metric-label">Déficit</div>
-              <div className="mt-2 text-xl font-semibold text-[#191717]">{formatMinutes(Math.abs(Math.min(bank?.balanceMinutesTotal ?? 0, 0)))}</div>
-              <div className="kpi-caption">Horas em aberto para compensação.</div>
-            </div>
-            <div className="insight-card">
-              <div className="metric-label">Atrasos</div>
-              <div className="mt-2 text-xl font-semibold text-[#191717]">{formatMinutes(bank?.lateMinutesTotal ?? 0)}</div>
-              <div className="kpi-caption">Tempo total de atraso registrado.</div>
-            </div>
-            <div className="insight-card">
-              <div className="metric-label">Faltas</div>
-              <div className="mt-2 text-xl font-semibold text-[#191717]">{bank?.absenceDays ?? 0}</div>
-              <div className="kpi-caption">Dias sem presença justificada.</div>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <RemoteClockInModal
-        isOpen={isRemoteModalOpen}
-        onClose={() => setIsRemoteModalOpen(false)}
-      />
-    </div>
+      <RemoteClockInModal isOpen={isRemoteModalOpen} onClose={() => setIsRemoteModalOpen(false)} />
+    </>
   );
 }

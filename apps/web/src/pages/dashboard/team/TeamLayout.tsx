@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Building, Clock3, Fingerprint, Users } from 'lucide-react';
+import { Building, Clock3, Fingerprint, ShieldAlert, Users } from 'lucide-react';
 import { useAuthStore } from '../../../stores/authStore';
 
 export default function TeamLayout() {
@@ -11,7 +11,10 @@ export default function TeamLayout() {
     const permissions = auth.user?.leadership_permissions ?? [];
     const baseTabs = permissions.some((item) => ['view_team', 'manage_team'].includes(item)) || auth.user?.role === 'admin' ? [
       { name: 'Colaboradores', path: '/dashboard/team/employees', icon: Users },
-      ...(permissions.includes('manage_team') || auth.user?.role === 'admin' ? [{ name: 'Jornadas', path: '/dashboard/team/schedules', icon: Clock3 }] : []),
+      ...(permissions.includes('manage_team') || auth.user?.role === 'admin' ? [
+        { name: 'Vínculos e afastamentos', path: '/dashboard/team/restrictions', icon: ShieldAlert },
+        { name: 'Jornadas', path: '/dashboard/team/schedules', icon: Clock3 },
+      ] : []),
     ] : [];
     if (auth.user?.role === 'admin') {
       baseTabs.push({ name: 'Setores', path: '/dashboard/team/departments', icon: Building });

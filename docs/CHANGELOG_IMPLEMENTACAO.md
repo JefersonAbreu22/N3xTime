@@ -2,7 +2,31 @@
 
 Este documento registra, em formato semelhante a commits, as alterações realizadas na evolução da plataforma N3xtime. Os títulos seguem o padrão `tipo(escopo): descrição` e representam entregas lógicas; não correspondem necessariamente a hashes individuais do Git.
 
-Data de consolidação: **07/08/2026**.
+Data de consolidação: **31/08/2026**.
+
+## feat(rh): portar o radar operacional e o Hub de vínculos para o multitenancy
+
+### O que foi alterado
+
+- Atualizado o dashboard do RH com radar nominal de falta de ponto, atrasos, home office, trabalho externo, férias, atestados, folgas e declarações de comparecimento.
+- Adicionado ao dashboard o quadro de batidas do dia, agrupado por setor, com colaborador, matrícula, tipo, horário e método de cada registro.
+- Adicionada atualização automática do radar a cada minuto e ações rápidas para pendências, análises e gestão de afastamentos.
+- Criado o Hub **Vínculos e afastamentos** com suspensão temporária, afastamentos previdenciários e ocupacionais, licenças, situações judiciais, outros afastamentos e desligamento.
+- O bloqueio é aplicado somente ao vínculo do colaborador na empresa autenticada; uma conta global vinculada a outros tenants continua isolada e funcional nos demais vínculos.
+- Administradores podem gerenciar os vínculos da empresa e líderes precisam da permissão `manage_team`, além de responsabilidade hierárquica sobre o colaborador.
+- Afastamentos com data final liberam o acesso automaticamente após o fim do dia; aplicação, reativação manual e reativação automática geram auditoria.
+- Colaboradores afastados continuam visíveis no Hub, mas não aparecem como falta ou pendência no radar operacional atual.
+- Confirmada a implementação já existente da declaração de comparecimento por intervalo de horas, incluindo solicitação, lançamento administrativo e cálculo proporcional do abono.
+
+### Banco e validação
+
+- Adicionada a migration `20260831170000_add_user_access_restrictions` com os novos estados, tipos, datas, motivo e índices por tenant.
+- A suíte multitenancy foi ampliada para 45 cenários e validou isolamento, sessão bloqueada, permissão de liderança, radar operacional, batidas agrupadas por setor e retorno automático.
+- Builds da API e do frontend, tipos, lint, encoding e schema Prisma foram aprovados.
+
+### Resultado
+
+O fluxo funcional e visual localizado na versão anterior foi adaptado à conta global e ao isolamento por `company_id` da edição multitenant.
 
 ## feat(tenancy): transformar a plataforma em uma aplicação multitenant
 

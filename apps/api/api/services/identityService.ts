@@ -3,7 +3,8 @@ import { Account } from '../models/Account.js';
 import { Company } from '../models/Company.js';
 import { CompanyMembership } from '../models/CompanyMembership.js';
 import { User } from '../models/User.js';
-import { runWithoutTenant } from '../tenancy/tenantContext.js';
+import { runWithoutTenant, runWithTenant } from '../tenancy/tenantContext.js';
+import { releaseExpiredRestriction } from './UserAccessService.js';
 
 export type AccountCompany = {
   membershipId: number;
@@ -65,9 +66,11 @@ export const listAccountCompanies = async (accountId: number): Promise<AccountCo
   for (const membership of memberships) {
     const [company, user] = await Promise.all([
       Company.findOne({ where: { id: membership.company_id, status: 'active' } }),
-      runWithoutTenant(() => User.findOne({ where: { id: membership.user_id, company_id: membership.company_id, status: 'active' } })),
+      runWithoutTenant(() => User.findOne({ where: { id: membership.user_id, company_id: membership.company_id } })),
     ]);
     if (!company || !user) continue;
+    await runWithTenant(company.id, () => releaseExpiredRestriction(user));
+    if (user.status !== 'active') continue;
     result.push({
       membershipId: membership.id,
       companyId: company.id,

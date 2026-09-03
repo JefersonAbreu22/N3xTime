@@ -3,6 +3,21 @@ import { sequelize } from '../config/database.js';
 import { Department } from './Department.js';
 import { WorkSchedule } from './WorkSchedule.js';
 
+export type AccessRestrictionType =
+  | 'temporary_suspension'
+  | 'inss_leave'
+  | 'occupational_leave'
+  | 'parental_leave'
+  | 'unpaid_leave'
+  | 'permanent_disability_retirement'
+  | 'military_service'
+  | 'union_or_elective_mandate'
+  | 'family_care_leave'
+  | 'protective_measure'
+  | 'judicial_detention'
+  | 'other_leave'
+  | 'termination';
+
 export class User extends Model {
   declare id: number;
   declare company_id: number;
@@ -18,7 +33,13 @@ export class User extends Model {
   declare schedule_id: number | null;
   declare pin_code: string | null;
   declare facial_descriptor: string | null;
-  declare status: 'active' | 'inactive';
+  declare status: 'active' | 'suspended' | 'inactive';
+  declare suspended_at: Date | null;
+  declare suspended_by: number | null;
+  declare suspension_reason: string | null;
+  declare suspension_type: AccessRestrictionType | null;
+  declare suspension_start_date: string | null;
+  declare suspension_end_at: Date | null;
   declare hire_date: string | null;
   declare remote_clock_in_enabled: boolean;
   declare remote_clock_in_justification: string | null;
@@ -96,8 +117,32 @@ User.init(
       comment: 'JSON string of facial embedding',
     },
     status: {
-      type: DataTypes.ENUM('active', 'inactive'),
+      type: DataTypes.ENUM('active', 'suspended', 'inactive'),
       defaultValue: 'active',
+    },
+    suspended_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    suspended_by: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    suspension_reason: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    suspension_type: {
+      type: DataTypes.ENUM('temporary_suspension', 'inss_leave', 'occupational_leave', 'parental_leave', 'unpaid_leave', 'permanent_disability_retirement', 'military_service', 'union_or_elective_mandate', 'family_care_leave', 'protective_measure', 'judicial_detention', 'other_leave', 'termination'),
+      allowNull: true,
+    },
+    suspension_start_date: {
+      type: DataTypes.DATEONLY,
+      allowNull: true,
+    },
+    suspension_end_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
     },
     hire_date: {
       type: DataTypes.DATEONLY,

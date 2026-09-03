@@ -8,6 +8,7 @@ import { CompanyMembership } from '../models/CompanyMembership.js';
 import { PlatformUser } from '../models/PlatformUser.js';
 import { User } from '../models/User.js';
 import { getJwtSecret } from '../config/security.js';
+import { releaseExpiredRestriction } from '../services/UserAccessService.js';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -95,10 +96,11 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
           return res.status(403).json({ success: false, error: 'Acesso à empresa revogado ou inválido.' });
         }
       }
-      const authenticatedUser = await runWithTenant(companyId, () =>
-        User.findOne({ where: { id: decoded.id, status: 'active' }, attributes: ['id', 'role', 'must_change_password'] })
-      );
-      if (!authenticatedUser) {
+      const authenticatedUser = await runWithTenant(companyId, () => User.findByPk(decoded.id));
+      if (authenticatedUser) {
+        await runWithTenant(companyId, () => releaseExpiredRestriction(authenticatedUser));
+      }
+      if (!authenticatedUser || authenticatedUser.status !== 'active') {
         return res.status(403).json({ success: false, error: 'Usuário inativo ou não encontrado.' });
       }
       if (!decoded.impersonatedBy && authenticatedUser.must_change_password && !req.originalUrl.startsWith('/api/auth/password/change')) {

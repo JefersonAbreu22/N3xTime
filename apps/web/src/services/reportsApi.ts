@@ -182,6 +182,31 @@ export type HrSummaryResponse = {
       biometricFailures: number;
     };
     bankHours: BankHoursMetrics;
+    lateArrivals?: Array<{
+      userId: number;
+      userName: string;
+      departmentName: string;
+      scheduleEntryTime: string;
+      actualEntryTime: string;
+      delayMinutes: number;
+      isRemote: boolean;
+    }>;
+    todayTimeRecords?: Array<{
+      departmentId: number | null;
+      departmentName: string;
+      collaborators: Array<{
+        userId: number;
+        userName: string;
+        registrationNumber: string;
+        records: Array<{
+          id: number;
+          recordTime: string;
+          recordType: 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'auto';
+          method: 'facial' | 'pin' | 'manual' | 'web';
+          status: 'valid' | 'pending_approval' | 'rejected' | 'adjusted';
+        }>;
+      }>;
+    }>;
     missingClockIns?: Array<{
       userId: number;
       userName: string;
@@ -198,6 +223,7 @@ export type HrSummaryResponse = {
         lastRecordType: 'entry' | 'lunch_start' | 'lunch_end' | 'exit' | 'auto';
         lastRecordMethod: 'facial' | 'pin' | 'manual' | 'web';
         isRemote: boolean;
+        workType: 'presential' | 'hybrid' | 'remote';
       }>;
       statuses: Array<{
         userId: number;
@@ -209,6 +235,7 @@ export type HrSummaryResponse = {
         hasRecordToday: boolean;
         lastRecordAt: string | null;
         isRemote: boolean;
+        workType: 'presential' | 'hybrid' | 'remote';
       }>;
       absent: Array<{
         userId: number;
@@ -338,6 +365,7 @@ type ReportFilters = {
   endDate?: string;
   departmentId?: number | null;
   userId?: number | null;
+  operationalOnly?: boolean;
 };
 
 const buildParams = (filters?: ReportFilters) => {
@@ -346,6 +374,7 @@ const buildParams = (filters?: ReportFilters) => {
   if (filters?.endDate) params.endDate = filters.endDate;
   if (filters?.departmentId) params.departmentId = filters.departmentId;
   if (filters?.userId) params.userId = filters.userId;
+  if (filters?.operationalOnly) params.operationalOnly = 'true';
   return params;
 };
 

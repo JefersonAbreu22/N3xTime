@@ -9,7 +9,9 @@ O N3xTime é uma plataforma SaaS multitenant para gestão de ponto, pessoas e ro
 - ponto remoto com localização, raio permitido e evidência fotográfica;
 - cadastro de colaboradores, jornadas, departamentos e feriados;
 - hierarquia de líderes por setor e permissões granulares;
-- solicitações de ajuste, abono, folga e férias com fluxo de aprovação;
+- solicitações de ajuste, abono, declaração de comparecimento por intervalo de horas, folga e férias com fluxo de aprovação;
+- radar operacional do RH com atrasos, ausência de ponto e situações justificadas do dia;
+- Hub de vínculos e afastamentos com bloqueio por empresa, retorno automático e auditoria;
 - banco de horas, espelho de ponto, indicadores e fechamento mensal;
 - histórico biométrico, auditoria e acompanhamento de falhas de e-mail;
 - painel Super Admin para criar e editar empresas, gerenciar administradores, suspender, acessar, importar e exportar tenants;

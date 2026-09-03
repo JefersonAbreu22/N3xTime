@@ -15,6 +15,12 @@ module.exports = {
         HOST: "127.0.0.1",
         PORT: 4989,
         APP_PUBLIC_URL: "https://www.n3xtime.com.br"
+      },
+      env_development: {
+        NODE_ENV: "development",
+        HOST: "127.0.0.1",
+        PORT: 4989,
+        APP_PUBLIC_URL: "http://localhost:5173"
       }
     },
     {
@@ -29,6 +35,12 @@ module.exports = {
       merge_logs: true,
       env: {
         NODE_ENV: "production",
+        HOST: "0.0.0.0",
+        PORT: 4979,
+        API_PROXY_TARGET: "http://127.0.0.1:4989"
+      },
+      env_development: {
+        NODE_ENV: "development",
         HOST: "0.0.0.0",
         PORT: 4979,
         API_PROXY_TARGET: "http://127.0.0.1:4989"

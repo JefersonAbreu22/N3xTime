@@ -60,13 +60,17 @@ function safeResolve(requestPath) {
 }
 
 function proxyToApi(req, res) {
+  // The browser calls this server on the same origin. From here to the API the
+  // request is server-to-server, so forwarding the browser Origin would make a
+  // local production instance fail the API CORS policy unnecessarily.
+  const { origin: _browserOrigin, ...forwardHeaders } = req.headers;
   const proxyRequest = http.request({
     hostname: apiProxyTarget.hostname,
     port: apiProxyTarget.port,
     method: req.method,
     path: req.url,
     headers: {
-      ...req.headers,
+      ...forwardHeaders,
       host: apiProxyTarget.host,
     },
   }, (proxyResponse) => {

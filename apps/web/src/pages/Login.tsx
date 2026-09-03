@@ -41,7 +41,10 @@ export default function Login() {
         toast.error('A API de autenticação não respondeu. Verifique a configuração do servidor.');
         return;
       }
-      toast.error('Credenciais inválidas.');
+      const apiError = typeof responseData === 'object' && responseData !== null && 'error' in responseData
+        ? String((responseData as { error?: unknown }).error || '')
+        : '';
+      toast.error(apiError || 'Credenciais inválidas.');
     } finally {
       setIsLoading(false);
     }

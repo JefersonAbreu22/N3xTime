@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import app from './app.js';
 import { connectDatabase } from './models/index.js';
 import { startRemotePhotoRetentionJob } from './services/RemotePhotoRetentionService.js';
+import { releaseAllExpiredRestrictions } from './services/UserAccessService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,7 +34,12 @@ const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '127.0
 const startServer = async () => {
   try {
     await connectDatabase();
+    await releaseAllExpiredRestrictions();
     const remotePhotoRetentionJob = startRemotePhotoRetentionJob();
+    const accessRestrictionTimer = setInterval(() => {
+      releaseAllExpiredRestrictions().catch((error) => console.error('Erro ao reativar acessos expirados:', error));
+    }, 60_000);
+    accessRestrictionTimer.unref();
 
     const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
       const startedServer = app.listen(PORT, HOST, () => {
@@ -49,6 +55,7 @@ const startServer = async () => {
      */
     process.on('SIGTERM', () => {
       console.log('SIGTERM signal received');
+      clearInterval(accessRestrictionTimer);
       remotePhotoRetentionJob.stop();
       server.close(() => {
         console.log('Server closed');
@@ -58,6 +65,7 @@ const startServer = async () => {
 
     process.on('SIGINT', () => {
       console.log('SIGINT signal received');
+      clearInterval(accessRestrictionTimer);
       remotePhotoRetentionJob.stop();
       server.close(() => {
         console.log('Server closed');
