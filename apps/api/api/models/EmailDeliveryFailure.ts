@@ -5,6 +5,7 @@ import { User } from './User.js';
 
 export class EmailDeliveryFailure extends Model {
   declare id: number;
+  declare company_id: number;
   declare record_id: number;
   declare user_id: number;
   declare recipient: string;

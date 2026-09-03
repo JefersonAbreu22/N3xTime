@@ -1,9 +1,12 @@
-import nodemailer from 'nodemailer';
 import { CompanyProfile } from '../models/CompanyProfile.js';
 import { EmailDeliveryFailure } from '../models/EmailDeliveryFailure.js';
 import { EmailDeliveryLog } from '../models/EmailDeliveryLog.js';
 import { TimeRecord } from '../models/TimeRecord.js';
 import { User } from '../models/User.js';
+import { runWithTenant } from '../tenancy/tenantContext.js';
+import { createSmtpTransport, getSmtpConfiguration, getSmtpErrorDetails } from './SmtpService.js';
+
+const EMAIL_DISABLED_CODE = 'EMAIL_DISABLED';
 
 const recordTypeLabels: Record<TimeRecord['record_type'], string> = {
   entry: 'Entrada',
@@ -27,39 +30,46 @@ const escapeHtml = (value: string) => value
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;');
 
-const getSmtpConfiguration = () => {
-  const host = process.env.SMTP_HOST?.trim();
-  const user = process.env.SMTP_USER?.trim();
-  const pass = process.env.SMTP_PASS;
-  const from = process.env.SMTP_FROM?.trim() || user;
-
-  if (!host || !user || !pass || !from) {
-    throw new Error('SMTP não configurado. Defina SMTP_HOST, SMTP_USER, SMTP_PASS e SMTP_FROM.');
-  }
-
-  return {
-    host,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
-    user,
-    pass,
-    from,
+const persistFailure = async (payload: {
+  user: User;
+  record: TimeRecord;
+  recipient: string;
+  message: string;
+  code: string | null;
+  attemptedAt: Date;
+}) => {
+  const values = {
+    record_id: payload.record.id,
+    user_id: payload.user.id,
+    recipient: payload.recipient,
+    smtp_code: payload.code,
+    error_message: payload.message,
+    attempted_at: payload.attemptedAt,
   };
+
+  await EmailDeliveryLog.create({
+    ...values,
+    status: 'failed',
+    message_id: null,
+    smtp_response: null,
+  }).catch((logError) => console.error(`Unable to persist email delivery log for record ${payload.record.id}:`, logError));
+
+  await EmailDeliveryFailure.create(values)
+    .catch((logError) => console.error(`Unable to persist email failure for record ${payload.record.id}:`, logError));
 };
 
-const getErrorDetails = (error: unknown) => {
-  const smtpError = error as { message?: string; code?: string; responseCode?: number };
-  const message = (smtpError?.message || 'Falha desconhecida ao enviar o comprovante por e-mail').slice(0, 4000);
-  const code = smtpError?.code || (smtpError?.responseCode ? String(smtpError.responseCode) : null);
-  return { message, code: code?.slice(0, 80) || null };
-};
-
-export const attemptTimeRecordEmail = async (user: User, record: TimeRecord) => {
-  if (String(process.env.DISABLE_TIME_RECORD_EMAIL || '').toLowerCase() === 'true') return;
+const attemptInTenant = async (user: User, record: TimeRecord) => {
   const attemptedAt = new Date();
   // This fallback allows an invalid/missing recipient to be recorded in the
   // delivery logs instead of making the log insert fail as well.
   const recipient = user.email?.trim() || 'e-mail nao cadastrado';
+
+  if (String(process.env.DISABLE_TIME_RECORD_EMAIL || '').trim().toLowerCase() === 'true') {
+    const message = 'Envio de comprovantes desabilitado pela configuração DISABLE_TIME_RECORD_EMAIL.';
+    console.warn(`Time record email skipped for record ${record.id}: ${message}`);
+    await persistFailure({ user, record, recipient, message, code: EMAIL_DISABLED_CODE, attemptedAt });
+    return;
+  }
 
   try {
     if (!user.email?.trim()) {
@@ -75,15 +85,7 @@ export const attemptTimeRecordEmail = async (user: User, record: TimeRecord) => 
     }).format(new Date(record.record_time));
     const statusLabel = record.status === 'pending_approval' ? 'Aguardando aprovação' : 'Confirmado';
 
-    const transporter = nodemailer.createTransport({
-      host: smtp.host,
-      port: smtp.port,
-      secure: smtp.secure,
-      auth: { user: smtp.user, pass: smtp.pass },
-      connectionTimeout: 8_000,
-      greetingTimeout: 8_000,
-      socketTimeout: 10_000,
-    });
+    const transporter = createSmtpTransport(smtp);
 
     const result = await transporter.sendMail({
       from: smtp.from,
@@ -125,16 +127,28 @@ export const attemptTimeRecordEmail = async (user: User, record: TimeRecord) => 
       message_id: result.messageId || null, smtp_response: result.response || null, error_message: null, attempted_at: attemptedAt,
     }).catch((logError) => console.error(`Unable to persist email delivery log for record ${record.id}:`, logError));
   } catch (error) {
-    const details = getErrorDetails(error);
+    const details = getSmtpErrorDetails(error);
     console.error(`Time record email failed for record ${record.id}:`, details.message);
-
-    await EmailDeliveryLog.create({
-      record_id: record.id, user_id: user.id, recipient, status: 'failed', smtp_code: details.code,
-      message_id: null, smtp_response: null, error_message: details.message, attempted_at: attemptedAt,
-    }).catch((logError) => console.error(`Unable to persist email delivery log for record ${record.id}:`, logError));
-    await EmailDeliveryFailure.create({
-      record_id: record.id, user_id: user.id, recipient, error_message: details.message,
-      smtp_code: details.code, attempted_at: attemptedAt,
-    }).catch((logError) => console.error(`Unable to persist email failure for record ${record.id}:`, logError));
+    await persistFailure({ user, record, recipient, message: details.message, code: details.code, attemptedAt });
   }
+};
+
+export const attemptTimeRecordEmail = async (user: User, record: TimeRecord) => {
+  const userCompanyId = Number(user.company_id);
+  const recordCompanyId = Number(record.company_id);
+  const hasUserCompany = Number.isInteger(userCompanyId) && userCompanyId > 0;
+  if (
+    !Number.isInteger(recordCompanyId)
+    || recordCompanyId <= 0
+    || Number(user.id) !== Number(record.user_id)
+    || (hasUserCompany && recordCompanyId !== userCompanyId)
+  ) {
+    console.error(`Time record email aborted for record ${record.id}: usuario ou tenant do registro nao confere.`);
+    return;
+  }
+
+  // The SMTP attempt can outlive the HTTP request (kiosk flow). Recreate the
+  // tenant context explicitly so the company profile and audit rows always
+  // belong to the same company as the time record.
+  await runWithTenant(recordCompanyId, () => attemptInTenant(user, record));
 };

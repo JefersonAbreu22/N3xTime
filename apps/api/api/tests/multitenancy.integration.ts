@@ -64,6 +64,8 @@ const {
   Department,
   DepartmentHierarchyLevel,
   DepartmentLeaderAssignment,
+  EmailDeliveryFailure,
+  EmailDeliveryLog,
   EmployeeRequest,
   Holiday,
   KioskControl,
@@ -78,6 +80,7 @@ const { getManagedUserIds } = await import('../utils/leadership.js');
 const { cleanExpiredRemotePhotos } = await import('../services/RemotePhotoRetentionService.js');
 const { releaseAllExpiredRestrictions } = await import('../services/UserAccessService.js');
 const { applyPartialAbsenceCredit } = await import('../services/AttendanceCalculator.js');
+const { attemptTimeRecordEmail } = await import('../services/TimeRecordEmailService.js');
 const { mapLegacyTenantColumns } = await import('../services/tenantTransferService.js');
 const { default: app } = await import('../app.js');
 
@@ -253,6 +256,50 @@ try {
     { id: platformUser.id, role: 'platform_admin', scope: 'platform' }, process.env.JWT_SECRET!, { expiresIn: '10m' }
   );
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+
+  await run('bloqueio de e-mail por configuração é auditado e isolado por tenant', async () => {
+    await attemptTimeRecordEmail(tenantA.employee, tenantA.record);
+
+    const [logsA, failuresA, logsB, failuresB] = await Promise.all([
+      runWithTenant(companyA.id, () => EmailDeliveryLog.findAll({ where: { record_id: tenantA.record.id } })),
+      runWithTenant(companyA.id, () => EmailDeliveryFailure.findAll({ where: { record_id: tenantA.record.id } })),
+      runWithTenant(companyB.id, () => EmailDeliveryLog.findAll({ where: { record_id: tenantA.record.id } })),
+      runWithTenant(companyB.id, () => EmailDeliveryFailure.findAll({ where: { record_id: tenantA.record.id } })),
+    ]);
+
+    assert.equal(logsA.length, 1);
+    assert.equal(logsA[0].status, 'failed');
+    assert.equal(logsA[0].smtp_code, 'EMAIL_DISABLED');
+    assert.equal(failuresA.length, 1);
+    assert.equal(failuresA[0].smtp_code, 'EMAIL_DISABLED');
+    assert.equal(logsB.length, 0);
+    assert.equal(failuresB.length, 0);
+
+    const [pageA, pageB] = await Promise.all([
+      api('/api/records/email-logs', { token: adminTokenA }),
+      api('/api/records/email-logs', { token: adminTokenB }),
+    ]);
+    assert.equal(pageA.status, 200);
+    assert.equal(pageA.body.data[0].smtp_code, 'EMAIL_DISABLED');
+    assert.equal(pageB.status, 200);
+    assert.equal(pageB.body.data.length, 0);
+  });
+
+  await run('diagnóstico SMTP expõe apenas dados seguros e exige administrador', async () => {
+    const [anonymous, manager, admin] = await Promise.all([
+      api('/api/email/smtp/status'),
+      api('/api/email/smtp/status', { token: managerTokenA }),
+      api('/api/email/smtp/status', { token: adminTokenA }),
+    ]);
+
+    assert.equal(anonymous.status, 401);
+    assert.equal(manager.status, 403);
+    assert.equal(admin.status, 200);
+    assert.equal(typeof admin.body.data.configured, 'boolean');
+    assert.equal(typeof admin.body.data.timeRecordEmailEnabled, 'boolean');
+    assert.equal(Object.hasOwn(admin.body.data, 'user'), false);
+    assert.equal(Object.hasOwn(admin.body.data, 'pass'), false);
+  });
 
   await run('abono parcial preserva o crédito positivo da regra legada', () => {
     const joaoGabriel = applyPartialAbsenceCredit({ requiredMinutes: 540, workedMinutes: 261, absenceMinutes: 346 });

@@ -8,6 +8,7 @@ import {
   FileText,
   LayoutDashboard,
   MailWarning,
+  Send,
   Settings,
   ShieldCheck,
   Users,
@@ -87,6 +88,7 @@ export const getDashboardNavSections = (role: DashboardRole, isPlatformAdmin = f
         { name: 'Configurações', path: '/dashboard/settings', icon: Settings },
         { name: 'Permissões', path: '/dashboard/settings/permissions', icon: ShieldCheck },
         { name: 'Falhas de e-mail', path: '/dashboard/settings/email-failures', icon: MailWarning },
+        { name: 'Teste SMTP', path: '/dashboard/settings/smtp-test', icon: Send },
       ],
     },
   ];
@@ -173,6 +175,7 @@ export const getCurrentDashboardPageTitle = (pathname: string) => {
   if (pathname.includes('/reports')) return 'Relatórios';
   if (pathname.includes('/settings/permissions')) return 'Permissões';
   if (pathname.includes('/settings/email-failures')) return 'Falhas de e-mail';
+  if (pathname.includes('/settings/smtp-test')) return 'Teste SMTP';
   if (pathname.includes('/settings')) return 'Configurações';
   return 'Visão Geral';
 };

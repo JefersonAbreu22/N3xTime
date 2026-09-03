@@ -35,6 +35,7 @@ const ClosingTab = lazy(() => import('./dashboard/reports/ClosingTab'));
 const SettingsPage = lazy(() => import('./dashboard/SettingsPage'));
 const PermissionsPage = lazy(() => import('./dashboard/PermissionsPage'));
 const EmailFailuresPage = lazy(() => import('./dashboard/EmailFailuresPage'));
+const SmtpTestPage = lazy(() => import('./dashboard/SmtpTestPage'));
 
 export default function Dashboard() {
   const location = useLocation();
@@ -149,6 +150,7 @@ export default function Dashboard() {
               <Route path="/settings" element={role === 'admin' ? <SettingsPage /> : <Navigate to="/dashboard" replace />} />
               <Route path="/settings/permissions" element={role === 'admin' ? <PermissionsPage /> : <Navigate to="/dashboard" replace />} />
               <Route path="/settings/email-failures" element={role === 'admin' ? <EmailFailuresPage /> : <Navigate to="/dashboard" replace />} />
+              <Route path="/settings/smtp-test" element={role === 'admin' ? <SmtpTestPage /> : <Navigate to="/dashboard" replace />} />
             </Routes>
           </Suspense>
         </main>

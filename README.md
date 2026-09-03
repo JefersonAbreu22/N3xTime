@@ -131,6 +131,7 @@ As referências completas ficam em [apps/api/.env.example](apps/api/.env.example
 | `JWT_SECRET` | Assinatura das sessões; mínimo de 32 caracteres. |
 | `APP_PUBLIC_URL` | URL pública usada em links como redefinição de senha. |
 | `SMTP_*` | Envio de e-mails transacionais. |
+| `DISABLE_TIME_RECORD_EMAIL` | Use `false` para enviar comprovantes de ponto; quando `true`, cada tentativa bloqueada aparece em Falhas de e-mail. |
 | `KIOSK_ACCESS_KEY` | Chave de bootstrap do quiosque da empresa inicial. |
 | `VITE_API_BASE_URL` | Endereço da API usado pelo frontend em desenvolvimento. |
 

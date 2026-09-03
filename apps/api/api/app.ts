@@ -22,6 +22,7 @@ import holidaysRoutes from './routes/holidays.js'
 import requestsRoutes from './routes/requests.js'
 import platformRoutes from './routes/platform.js'
 import fileRoutes from './routes/files.js'
+import emailRoutes from './routes/email.js'
 import './models/index.js'
 import { assertSecurityConfiguration, corsOptions } from './config/security.js'
 import { sequelize } from './config/database.js'
@@ -81,6 +82,7 @@ app.use('/api/holidays', holidaysRoutes)
 app.use('/api/requests', requestsRoutes)
 app.use('/api/platform', platformRoutes)
 app.use('/api/files', fileRoutes)
+app.use('/api/email', emailRoutes)
 
 /**
  * health
