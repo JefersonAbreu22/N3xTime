@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as faceapi from 'face-api.js';
 import { Camera, CheckCircle, KeyRound, RefreshCw, ShieldCheck, Sun, XCircle, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -81,6 +81,7 @@ const LIVENESS_TURN_TOLERANCE = 0.12;
 // The in-flight lock prevents concurrent inferences on slower terminals.
 const SCAN_INTERVAL_MS = 240;
 const DETECTION_OPTIONS = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.52, maxResults: 3 });
+const MODEL_LOAD_TIMEOUT_MS = 20_000;
 const DAILY_CACHE_REFRESH_HOUR = 6;
 const CACHE_CYCLE_STORAGE_KEY = 'n3xtime-kiosk-cache-cycle';
 const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
@@ -108,7 +109,9 @@ const getNextDailyCacheRefresh = (date = new Date()) => {
   return next;
 };
 
-const getVersionedModelUri = () => `/models/cache-${getDailyCacheCycle()}`;
+// Model weights are stable, large assets. Keep their URL stable so the browser
+// can reuse its HTTP cache after the daily application refresh.
+const MODEL_URI = '/models/release-kiosk-v2';
 
 const buildDeviceInfo = () =>
   JSON.stringify({
@@ -180,6 +183,8 @@ export default function Kiosk() {
   const [faceGuide, setFaceGuide] = useState<FaceGuide | null>(null);
   const [isRecognitionEnabled, setIsRecognitionEnabled] = useState(false);
   const [isStartingRecognition, setIsStartingRecognition] = useState(false);
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [modelLoadingMessage, setModelLoadingMessage] = useState('Preparando o motor facial...');
   const [isFacesLoading, setIsFacesLoading] = useState(false);
   const [livenessStep, setLivenessStep] = useState<LivenessStep>('align');
   const [livenessDirection, setLivenessDirection] = useState<'left' | 'right'>('left');
@@ -282,6 +287,12 @@ export default function Kiosk() {
     let cancelled = false;
     setCompanyLookupError(null);
 
+    // An authenticated kiosk is resolved from its signed session below. This
+    // lets an old bookmarked URL redirect to the canonical company slug.
+    if (kioskToken) {
+      return () => { cancelled = true; };
+    }
+
     if (!companySlug) {
       setCompanyName(null);
       return () => { cancelled = true; };
@@ -299,7 +310,7 @@ export default function Kiosk() {
       });
 
     return () => { cancelled = true; };
-  }, [companySlug]);
+  }, [companySlug, kioskToken]);
 
   useEffect(() => {
     const refreshTimeSuggestion = () => {
@@ -312,30 +323,50 @@ export default function Kiosk() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const ensureModelsLoaded = async () => {
+  const ensureModelsLoaded = useCallback(async () => {
     const cacheCycle = getDailyCacheCycle();
-    if (isModelLoaded && modelCacheCycleRef.current === cacheCycle) return;
+    if (modelCacheCycleRef.current === cacheCycle) return;
     if (modelLoadPromiseRef.current) return modelLoadPromiseRef.current;
 
-    const modelUri = getVersionedModelUri();
-    const loading = Promise.all([
-      faceapi.nets.ssdMobilenetv1.loadFromUri(modelUri),
-      faceapi.nets.faceLandmark68Net.loadFromUri(modelUri),
-      faceapi.nets.faceRecognitionNet.loadFromUri(modelUri),
-    ]).then(() => {
+    setIsModelLoading(true);
+    const loadNetwork = async (label: string, load: () => Promise<void>) => {
+      setModelLoadingMessage(label);
+      let timeoutId: number | null = null;
+      try {
+        await Promise.race([
+          load(),
+          new Promise<never>((_resolve, reject) => {
+            timeoutId = window.setTimeout(
+              () => reject(new Error(`Tempo limite excedido: ${label}`)),
+              MODEL_LOAD_TIMEOUT_MS
+            );
+          }),
+        ]);
+      } finally {
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+      }
+    };
+    const loading = (async () => {
+      // Load sequentially to avoid decoding three large TensorFlow weight sets
+      // at once on lower-memory kiosk devices.
+      await loadNetwork('Carregando pontos de referência do rosto...', () => faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URI));
+      await loadNetwork('Carregando identificação facial...', () => faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URI));
+      await loadNetwork('Carregando detector facial...', () => faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URI));
       modelCacheCycleRef.current = cacheCycle;
       setIsModelLoaded(true);
-    }).catch((error) => {
+    })().catch((error) => {
       console.error('Model loading error:', error);
-      setFatalError('Os modelos faciais do totem não foram encontrados ou estão incompletos.');
+      setFatalError('O motor facial demorou para carregar. Verifique a conexão e tente iniciar novamente.');
       throw error;
     }).finally(() => {
       modelLoadPromiseRef.current = null;
+      setIsModelLoading(false);
+      setModelLoadingMessage('Preparando o motor facial...');
     });
 
     modelLoadPromiseRef.current = loading;
     return loading;
-  };
+  }, []);
 
   const stopVideo = () => {
     setIsCameraReady(false);
@@ -431,12 +462,7 @@ export default function Kiosk() {
         if (cancelled) return;
 
         if (companySlug && statusResponse.data.company.slug !== companySlug) {
-          clearKioskToken();
-          setKioskToken(null);
-          setTerminalEnabled(false);
-          matcherRef.current = null;
-          setFacesCount(0);
-          stopVideo();
+          navigate(`/${statusResponse.data.company.slug}/kiosk`, { replace: true });
           return;
         }
 
@@ -479,17 +505,25 @@ export default function Kiosk() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [kioskToken, fatalError, companySlug]);
+  }, [kioskToken, fatalError, companySlug, navigate]);
 
   const canPrepareRecognition = useMemo(
-    () => Boolean(kioskToken) && terminalEnabled && !fatalError,
-    [kioskToken, terminalEnabled, fatalError]
+    () => Boolean(kioskToken) && terminalEnabled,
+    [kioskToken, terminalEnabled]
   );
 
   const canScan = useMemo(
-    () => canPrepareRecognition && isModelLoaded && isCameraReady,
-    [canPrepareRecognition, isCameraReady, isModelLoaded]
+    () => canPrepareRecognition && isModelLoaded && isCameraReady && !fatalError,
+    [canPrepareRecognition, fatalError, isCameraReady, isModelLoaded]
   );
+
+  useEffect(() => {
+    if (!canPrepareRecognition) return;
+    // Preparing the recognition engine does not request camera permission.
+    // Start it as soon as the terminal session is ready, in parallel with the
+    // biometric list, so clicking to clock only needs to start the camera.
+    void ensureModelsLoaded().catch(() => undefined);
+  }, [canPrepareRecognition, ensureModelsLoaded]);
 
   useEffect(() => {
     const loadFaces = async () => {
@@ -1289,14 +1323,17 @@ export default function Kiosk() {
     if (!accessKey.trim()) return;
     setIsSubmittingAccessKey(true);
     try {
-      const response = await authApi.kioskLogin(accessKey.trim(), companySlug);
+      const response = await authApi.kioskLogin(
+        accessKey.trim(),
+        companyLookupError ? undefined : companySlug
+      );
       if (response.success) {
         setKioskToken(getKioskToken());
         setTerminalEnabled(true);
         setCompanyName(response.data.company.name);
         setFatalError(null);
         toast.success('Terminal autenticado com sucesso.');
-        if (!companySlug) {
+        if (companySlug !== response.data.company.slug) {
           navigate(`/${response.data.company.slug}/kiosk`, { replace: true });
         }
       }
@@ -1484,12 +1521,7 @@ export default function Kiosk() {
                 </div>
               )}
 
-              {!isModelLoaded ? (
-                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#111010]">
-                  <div className="h-14 w-14 animate-spin rounded-full border-4 border-white/10 border-t-[#026666]" />
-                  <p className="mt-5 text-sm text-white/72">Carregando motor de reconhecimento...</p>
-                </div>
-              ) : fatalError ? (
+              {fatalError ? (
                 <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#111010] px-6 text-center">
                   <p className="text-lg font-semibold text-[#efeeee]">Reconhecimento indisponivel</p>
                   <p className="mt-3 max-w-md text-sm leading-6 text-white/68">{fatalError}</p>
@@ -1500,7 +1532,7 @@ export default function Kiosk() {
                   <p className="text-lg font-semibold text-[#efeeee]">Autenticação do Terminal</p>
                   <p className="mt-2 max-w-md text-sm leading-6 text-white/68">
                     {companyLookupError
-                      ? companyLookupError
+                      ? `${companyLookupError} Você ainda pode autenticar com a chave do terminal para corrigirmos o endereço automaticamente.`
                       : `Insira a chave de acesso${companyName ? ` de ${companyName}` : ''} para vincular este dispositivo como um Totem de ponto.`}
                   </p>
                   <form onSubmit={handleAccessKeySubmit} className="mt-6 flex w-full max-w-sm flex-col gap-3">
@@ -1513,7 +1545,7 @@ export default function Kiosk() {
                     />
                     <button
                       type="submit"
-                      disabled={isSubmittingAccessKey || !accessKey.trim() || Boolean(companyLookupError)}
+                      disabled={isSubmittingAccessKey || !accessKey.trim()}
                       className="bg-[#026666] px-4 py-3 font-semibold text-white transition-colors hover:bg-[#014f4f] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isSubmittingAccessKey ? 'Autenticando...' : 'Autenticar Terminal'}
@@ -1532,10 +1564,16 @@ export default function Kiosk() {
                     Cadastre a face do colaborador no painel de equipe para liberar o uso do totem.
                   </p>
                 </div>
+              ) : !isModelLoaded ? (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#111010] px-6 text-center">
+                  <div className="h-14 w-14 animate-spin rounded-full border-4 border-white/10 border-t-[#026666]" />
+                  <p className="mt-5 text-sm text-white/72">{isModelLoading ? modelLoadingMessage : 'Preparando o motor facial...'}</p>
+                  <p className="mt-2 max-w-md text-xs leading-5 text-white/50">A câmera continua desligada durante esta preparação.</p>
+                </div>
               ) : isStartingRecognition ? (
                 <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#111010] px-6 text-center">
                   <div className="h-14 w-14 animate-spin rounded-full border-4 border-white/10 border-t-[#026666]" />
-                  <p className="mt-5 text-sm text-white/72">Inicializando câmera e motor facial...</p>
+                  <p className="mt-5 text-sm text-white/72">Inicializando câmera...</p>
                 </div>
               ) : !isCameraReady ? (
                 <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#111010] px-6 text-center">
@@ -1671,7 +1709,7 @@ export default function Kiosk() {
             <div className="order-2 grid gap-2 rounded-2xl border border-white/10 bg-[#151515] p-3 text-white sm:grid-cols-2">
               <button
                 onClick={() => void handleRecognitionToggle()}
-                disabled={!kioskToken || !terminalEnabled || isFacesLoading || facesCount === 0 || isStartingRecognition}
+                disabled={!kioskToken || !terminalEnabled || isFacesLoading || isModelLoading || facesCount === 0 || isStartingRecognition}
                 className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   isRecognitionEnabled
                     ? 'border-amber-300/40 bg-amber-400/10 hover:bg-amber-400/20'
