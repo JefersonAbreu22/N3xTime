@@ -53,6 +53,12 @@ function safeResolve(requestPath) {
     return indexFile;
   }
 
+  // The kiosk rotates this virtual directory every day at 06:00. Mapping it
+  // to the same physical model files gives the browser a fresh HTTP cache key
+  // without duplicating the large face-recognition assets on disk.
+  const versionedModel = decodedPath.match(/^\/models\/cache-\d{4}-\d{2}-\d{2}\/([^/\\]+)$/);
+  if (versionedModel) decodedPath = `/models/${versionedModel[1]}`;
+
   const normalizedPath = path.normalize(decodedPath).replace(/^(\.\.[/\\])+/, '');
   const filePath = path.join(distDir, normalizedPath);
 

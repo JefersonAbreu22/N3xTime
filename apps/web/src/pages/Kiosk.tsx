@@ -81,6 +81,8 @@ const LIVENESS_TURN_TOLERANCE = 0.12;
 // The in-flight lock prevents concurrent inferences on slower terminals.
 const SCAN_INTERVAL_MS = 240;
 const DETECTION_OPTIONS = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.52, maxResults: 3 });
+const DAILY_CACHE_REFRESH_HOUR = 6;
+const CACHE_CYCLE_STORAGE_KEY = 'n3xtime-kiosk-cache-cycle';
 const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
   video: {
     facingMode: 'user',
@@ -89,6 +91,24 @@ const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
     frameRate: { ideal: 15, max: 24 },
   },
 };
+
+const getDailyCacheCycle = (date = new Date()) => {
+  const adjusted = new Date(date);
+  adjusted.setHours(adjusted.getHours() - DAILY_CACHE_REFRESH_HOUR);
+  const year = adjusted.getFullYear();
+  const month = String(adjusted.getMonth() + 1).padStart(2, '0');
+  const day = String(adjusted.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getNextDailyCacheRefresh = (date = new Date()) => {
+  const next = new Date(date);
+  next.setHours(DAILY_CACHE_REFRESH_HOUR, 0, 0, 0);
+  if (next.getTime() <= date.getTime()) next.setDate(next.getDate() + 1);
+  return next;
+};
+
+const getVersionedModelUri = () => `/models/cache-${getDailyCacheCycle()}`;
 
 const buildDeviceInfo = () =>
   JSON.stringify({
@@ -128,6 +148,11 @@ export default function Kiosk() {
   const lastFailureLogRef = useRef<{ reason: string; at: number } | null>(null);
   const isClaimingTerminalRef = useRef(false);
   const isProcessingFrameRef = useRef(false);
+  const isRecognitionEnabledRef = useRef(false);
+  const isStartingRecognitionRef = useRef(false);
+  const modelLoadPromiseRef = useRef<Promise<void> | null>(null);
+  const modelCacheCycleRef = useRef<string | null>(null);
+  const cacheRefreshPendingRef = useRef(false);
   const statusRef = useRef<ScanStatus>('idle');
   const livenessStepRef = useRef<LivenessStep>('align');
   const livenessDirectionRef = useRef<'left' | 'right'>('left');
@@ -154,6 +179,8 @@ export default function Kiosk() {
   const [companyLookupError, setCompanyLookupError] = useState<string | null>(null);
   const [faceGuide, setFaceGuide] = useState<FaceGuide | null>(null);
   const [isRecognitionEnabled, setIsRecognitionEnabled] = useState(false);
+  const [isStartingRecognition, setIsStartingRecognition] = useState(false);
+  const [isFacesLoading, setIsFacesLoading] = useState(false);
   const [livenessStep, setLivenessStep] = useState<LivenessStep>('align');
   const [livenessDirection, setLivenessDirection] = useState<'left' | 'right'>('left');
   const [isLowLight, setIsLowLight] = useState(false);
@@ -183,6 +210,73 @@ export default function Kiosk() {
   useEffect(() => {
     livenessDirectionRef.current = livenessDirection;
   }, [livenessDirection]);
+
+  useEffect(() => {
+    isRecognitionEnabledRef.current = isRecognitionEnabled;
+  }, [isRecognitionEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const refreshBrowserCache = async () => {
+      const cacheCycle = getDailyCacheCycle();
+      try {
+        if ('caches' in window) {
+          const cacheNames = await window.caches.keys();
+          await Promise.all(cacheNames.map((cacheName) => window.caches.delete(cacheName)));
+        }
+        window.localStorage.setItem(CACHE_CYCLE_STORAGE_KEY, cacheCycle);
+      } catch (error) {
+        console.warn('Não foi possível limpar o Cache Storage do navegador:', error);
+      }
+
+      if (isRecognitionEnabledRef.current || isProcessingFrameRef.current || isStartingRecognitionRef.current) {
+        cacheRefreshPendingRef.current = true;
+        const reloadWhenIdle = () => {
+          if (cancelled) return;
+          if (isRecognitionEnabledRef.current || isProcessingFrameRef.current || isStartingRecognitionRef.current) {
+            window.setTimeout(reloadWhenIdle, 1_000);
+            return;
+          }
+          cacheRefreshPendingRef.current = false;
+          window.location.reload();
+        };
+        window.setTimeout(reloadWhenIdle, 1_000);
+        return;
+      }
+      modelCacheCycleRef.current = null;
+      setIsModelLoaded(false);
+      window.location.reload();
+    };
+
+    const scheduleNextRefresh = () => {
+      const delay = getNextDailyCacheRefresh().getTime() - Date.now();
+      timer = window.setTimeout(async () => {
+        await refreshBrowserCache();
+        if (!cancelled) scheduleNextRefresh();
+      }, delay);
+    };
+
+    let storedCycle: string | null = null;
+    try {
+      storedCycle = window.localStorage.getItem(CACHE_CYCLE_STORAGE_KEY);
+      if (!storedCycle) window.localStorage.setItem(CACHE_CYCLE_STORAGE_KEY, getDailyCacheCycle());
+    } catch (error) {
+      console.warn('Não foi possível consultar o ciclo de cache do totem:', error);
+    }
+
+    if (storedCycle && storedCycle !== getDailyCacheCycle()) {
+      void refreshBrowserCache();
+    } else {
+      scheduleNextRefresh();
+    }
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,26 +312,35 @@ export default function Kiosk() {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const loadModels = async () => {
-      try {
-        await Promise.all([
-          faceapi.nets.ssdMobilenetv1.loadFromUri('/models'),
-          faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
-          faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
-        ]);
-        setIsModelLoaded(true);
-      } catch (error) {
-        console.error('Model loading error:', error);
-        setFatalError('Os modelos faciais do totem não foram encontrados ou estão incompletos em /public/models.');
-      }
-    };
-    loadModels();
-  }, []);
+  const ensureModelsLoaded = async () => {
+    const cacheCycle = getDailyCacheCycle();
+    if (isModelLoaded && modelCacheCycleRef.current === cacheCycle) return;
+    if (modelLoadPromiseRef.current) return modelLoadPromiseRef.current;
+
+    const modelUri = getVersionedModelUri();
+    const loading = Promise.all([
+      faceapi.nets.ssdMobilenetv1.loadFromUri(modelUri),
+      faceapi.nets.faceLandmark68Net.loadFromUri(modelUri),
+      faceapi.nets.faceRecognitionNet.loadFromUri(modelUri),
+    ]).then(() => {
+      modelCacheCycleRef.current = cacheCycle;
+      setIsModelLoaded(true);
+    }).catch((error) => {
+      console.error('Model loading error:', error);
+      setFatalError('Os modelos faciais do totem não foram encontrados ou estão incompletos.');
+      throw error;
+    }).finally(() => {
+      modelLoadPromiseRef.current = null;
+    });
+
+    modelLoadPromiseRef.current = loading;
+    return loading;
+  };
 
   const stopVideo = () => {
     setIsCameraReady(false);
     setFaceGuide(null);
+    isRecognitionEnabledRef.current = false;
     setIsRecognitionEnabled(false);
     if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
@@ -250,33 +353,45 @@ export default function Kiosk() {
   };
 
   const startVideo = async () => {
+    const currentStream = videoRef.current?.srcObject as MediaStream | null;
+    if (currentStream?.getVideoTracks().some((track) => track.readyState === 'live')) {
+      setIsCameraReady(true);
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia(CAMERA_CONSTRAINTS);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        const capabilities = stream.getVideoTracks()[0]?.getCapabilities?.() as { torch?: boolean } | undefined;
-        setTorchAvailable(Boolean(capabilities?.torch));
-        videoRef.current.onloadedmetadata = () => {
-          setIsCameraReady(true);
-        };
+      const video = videoRef.current;
+      if (!video) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error('Elemento de vídeo indisponível.');
       }
+
+      video.srcObject = stream;
+      const capabilities = stream.getVideoTracks()[0]?.getCapabilities?.() as { torch?: boolean } | undefined;
+      setTorchAvailable(Boolean(capabilities?.torch));
+      if (video.readyState < 2) {
+        await new Promise<void>((resolve) => video.addEventListener('loadedmetadata', () => resolve(), { once: true }));
+      }
+      await video.play();
+      setIsCameraReady(true);
     } catch (err) {
       console.error('Error accessing webcam:', err);
+      stopVideo();
       setFatalError('A câmera do totem não pôde ser iniciada. Verifique a permissão do navegador e se outro aplicativo está usando a câmera.');
       toast.error('Não foi possível acessar a câmera.');
+      throw err;
     }
   };
 
   useEffect(() => {
-    if (isModelLoaded && kioskToken) {
-      setFatalError(null);
-      startVideo();
-    }
-
+    const video = videoRef.current;
     return () => {
-      stopVideo();
+      const stream = video?.srcObject as MediaStream | null;
+      stream?.getTracks().forEach((track) => track.stop());
+      if (video) video.srcObject = null;
     };
-  }, [isModelLoaded, kioskToken]);
+  }, []);
 
   // Sample a tiny frame every two seconds. This is intentionally independent of
   // face detection, so the low-light hint adds virtually no recognition cost.
@@ -366,13 +481,19 @@ export default function Kiosk() {
     };
   }, [kioskToken, fatalError, companySlug]);
 
+  const canPrepareRecognition = useMemo(
+    () => Boolean(kioskToken) && terminalEnabled && !fatalError,
+    [kioskToken, terminalEnabled, fatalError]
+  );
+
   const canScan = useMemo(
-    () => isModelLoaded && Boolean(kioskToken) && terminalEnabled && !fatalError,
-    [isModelLoaded, kioskToken, terminalEnabled, fatalError]
+    () => canPrepareRecognition && isModelLoaded && isCameraReady,
+    [canPrepareRecognition, isCameraReady, isModelLoaded]
   );
 
   useEffect(() => {
     const loadFaces = async () => {
+      setIsFacesLoading(true);
       try {
         setFatalError(null);
         const res = await authApi.getFaces(true);
@@ -414,18 +535,21 @@ export default function Kiosk() {
           return;
         }
         setFatalError('Não foi possível carregar as faces cadastradas.');
+      } finally {
+        setIsFacesLoading(false);
       }
     };
 
-    if (canScan) {
+    if (canPrepareRecognition) {
       loadFaces();
     } else {
+      setIsFacesLoading(false);
       matcherRef.current = null;
       labeledFacesRef.current = [];
       pendingFaceMatchRef.current = null;
       setFacesCount(0);
     }
-  }, [canScan]);
+  }, [canPrepareRecognition]);
 
   const resetStatus = () => {
     setStatus('idle');
@@ -510,7 +634,7 @@ export default function Kiosk() {
 
   const stopRecognition = (message?: string) => {
     pendingFaceMatchRef.current = null;
-    setIsRecognitionEnabled(false);
+    stopVideo();
     resetLivenessFlow(message || 'Reconhecimento em espera.');
     setFaceGuide(
       message
@@ -521,6 +645,10 @@ export default function Kiosk() {
           }
         : null
     );
+    if (cacheRefreshPendingRef.current) {
+      cacheRefreshPendingRef.current = false;
+      window.setTimeout(() => window.location.reload(), 0);
+    }
   };
 
   const buildFaceGuide = (
@@ -1182,13 +1310,9 @@ export default function Kiosk() {
   const handleResetTerminal = () => {
     resetStatus();
     setFatalError(null);
-    setIsCameraReady(false);
     lastFailureLogRef.current = null;
     stopRecognition();
-    toast.success('Totem pronto para nova leitura.');
-    if (isModelLoaded && kioskToken) {
-      startVideo();
-    }
+    toast.success('Totem reiniciado. A câmera permanece desligada até a próxima leitura.');
   };
 
   const handleLightAssistToggle = async () => {
@@ -1209,7 +1333,7 @@ export default function Kiosk() {
     }
   };
 
-  const handleRecognitionToggle = () => {
+  const handleRecognitionToggle = async () => {
     if (isRecognitionEnabled) {
       stopRecognition('Reconhecimento pausado. Clique novamente para iniciar.');
       return;
@@ -1219,25 +1343,35 @@ export default function Kiosk() {
       toast.error('O terminal ainda não está liberado.');
       return;
     }
-    if (!isModelLoaded || !isCameraReady) {
-      toast.error('A câmera e o motor facial ainda estão inicializando.');
-      return;
-    }
     if (facesCount === 0) {
       toast.error('Não há biometrias cadastradas para leitura.');
       return;
     }
+    if (isStartingRecognitionRef.current) return;
 
-    resetStatus();
-    lastFailureLogRef.current = null;
-    const challengeDirection = Math.random() >= 0.5 ? 'right' : 'left';
-    resetLivenessFlow('Alinhe o rosto ao centro para iniciar a prova de vida.', challengeDirection);
-    setFaceGuide({
-      detected: false,
-      mapped: false,
-      message: `Reconhecimento iniciado. Alinhe o rosto ao centro e prepare-se para girar para a ${challengeDirection === 'left' ? 'esquerda' : 'direita'}.`,
-    });
-    setIsRecognitionEnabled(true);
+    isStartingRecognitionRef.current = true;
+    setIsStartingRecognition(true);
+    setFatalError(null);
+    try {
+      await ensureModelsLoaded();
+      await startVideo();
+      resetStatus();
+      lastFailureLogRef.current = null;
+      const challengeDirection = Math.random() >= 0.5 ? 'right' : 'left';
+      resetLivenessFlow('Alinhe o rosto ao centro para iniciar a prova de vida.', challengeDirection);
+      setFaceGuide({
+        detected: false,
+        mapped: false,
+        message: `Reconhecimento iniciado. Alinhe o rosto ao centro e prepare-se para girar para a ${challengeDirection === 'left' ? 'esquerda' : 'direita'}.`,
+      });
+      isRecognitionEnabledRef.current = true;
+      setIsRecognitionEnabled(true);
+    } catch {
+      stopVideo();
+    } finally {
+      isStartingRecognitionRef.current = false;
+      setIsStartingRecognition(false);
+    }
   };
 
   const currentLivenessInstruction = !isRecognitionEnabled
@@ -1386,10 +1520,10 @@ export default function Kiosk() {
                     </button>
                   </form>
                 </div>
-              ) : !isCameraReady ? (
+              ) : isFacesLoading ? (
                 <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#111010] px-6 text-center">
                   <div className="h-14 w-14 animate-spin rounded-full border-4 border-white/10 border-t-[#026666]" />
-                  <p className="mt-5 text-sm text-white/72">Inicializando câmera do totem...</p>
+                  <p className="mt-5 text-sm text-white/72">Carregando biometrias do terminal...</p>
                 </div>
               ) : facesCount === 0 ? (
                 <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#111010] px-6 text-center">
@@ -1397,6 +1531,24 @@ export default function Kiosk() {
                   <p className="mt-3 max-w-md text-sm leading-6 text-white/68">
                     Cadastre a face do colaborador no painel de equipe para liberar o uso do totem.
                   </p>
+                </div>
+              ) : isStartingRecognition ? (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#111010] px-6 text-center">
+                  <div className="h-14 w-14 animate-spin rounded-full border-4 border-white/10 border-t-[#026666]" />
+                  <p className="mt-5 text-sm text-white/72">Inicializando câmera e motor facial...</p>
+                </div>
+              ) : !isCameraReady ? (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-[#111010] px-6 text-center">
+                  <Camera className="mb-4 h-12 w-12 text-[#7fdddd]" />
+                  <p className="text-lg font-semibold text-[#efeeee]">Câmera desligada</p>
+                  <p className="mt-3 max-w-md text-sm leading-6 text-white/68">A câmera será ligada somente durante o reconhecimento e desligada assim que a leitura terminar.</p>
+                  <button
+                    type="button"
+                    onClick={() => void handleRecognitionToggle()}
+                    className="mt-6 inline-flex items-center gap-3 border border-[#7fdddd]/40 bg-[#026666] px-6 py-4 text-sm font-semibold text-white transition-colors hover:bg-[#014f4f]"
+                  >
+                    <Camera className="h-5 w-5" /> Iniciar reconhecimento facial
+                  </button>
                 </div>
               ) : null}
 
@@ -1418,14 +1570,14 @@ export default function Kiosk() {
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 backdrop-blur-[2px]">
                   <div className="flex max-w-md flex-col items-center px-6 text-center">
                     <button
-                      onClick={handleRecognitionToggle}
+                      onClick={() => void handleRecognitionToggle()}
                       className="inline-flex items-center gap-3 border border-[#7fdddd]/40 bg-[#026666]/70 px-6 py-4 text-sm font-semibold text-white transition-colors hover:bg-[#026666]"
                     >
                       <Camera className="h-5 w-5" />
                       Iniciar reconhecimento facial
                     </button>
                     <p className="mt-4 text-sm leading-6 text-white/72">
-                      A câmera permanece em espera para evitar leitura contínua. Inicie a leitura apenas quando o colaborador estiver posicionado e pronto para seguir o desafio exibido na tela.
+                      A câmera permanece desligada fora da leitura. Inicie somente quando o colaborador estiver posicionado e pronto para seguir o desafio exibido na tela.
                     </p>
                   </div>
                 </div>
@@ -1518,8 +1670,8 @@ export default function Kiosk() {
 
             <div className="order-2 grid gap-2 rounded-2xl border border-white/10 bg-[#151515] p-3 text-white sm:grid-cols-2">
               <button
-                onClick={handleRecognitionToggle}
-                disabled={!kioskToken || !isCameraReady || facesCount === 0}
+                onClick={() => void handleRecognitionToggle()}
+                disabled={!kioskToken || !terminalEnabled || isFacesLoading || facesCount === 0 || isStartingRecognition}
                 className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   isRecognitionEnabled
                     ? 'border-amber-300/40 bg-amber-400/10 hover:bg-amber-400/20'
@@ -1527,7 +1679,7 @@ export default function Kiosk() {
                 }`}
               >
                 <Camera className="h-5 w-5" />
-                {isRecognitionEnabled ? 'Pausar reconhecimento' : 'Iniciar reconhecimento'}
+                {isStartingRecognition ? 'Inicializando...' : isRecognitionEnabled ? 'Parar reconhecimento' : 'Iniciar reconhecimento'}
               </button>
               <button
                 onClick={handleResetTerminal}
