@@ -10,8 +10,10 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+import Logo from '../components/Logo';
 import { authApi, type AccountCompany } from '../services/authApi';
 import { useAuthStore } from '../stores/authStore';
+import { usePlatformAuthStore } from '../stores/platformAuthStore';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -26,6 +28,8 @@ export default function Login() {
 
   const navigate = useNavigate();
   const setSession = useAuthStore((state) => state.setSession);
+  const setPlatformSession = usePlatformAuthStore((state) => state.setSession);
+  const clearPlatformSession = usePlatformAuthStore((state) => state.clearSession);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,6 +51,17 @@ export default function Login() {
         });
 
         return;
+      }
+
+      if (response.data.user.is_platform_admin) {
+        setPlatformSession(response.data.token, {
+          id: response.data.user.id,
+          name: response.data.user.name,
+          email: response.data.user.email,
+          role: 'platform_admin',
+        });
+      } else {
+        clearPlatformSession();
       }
 
       setSession(response.data.token, response.data.user);
@@ -109,6 +124,7 @@ export default function Login() {
         return;
       }
 
+      clearPlatformSession();
       setSession(response.data.token, response.data.user);
 
       toast.success(`Acessando ${company.name}.`);
@@ -153,11 +169,7 @@ export default function Login() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_15%,rgba(38,255,151,0.10),transparent_35%)]" />
 
           <div className="relative z-10 flex w-full max-w-[470px] flex-col items-center text-center">
-            <img
-              src="/n3xtime.png"
-              alt="N3xTime"
-              className="mb-12 max-h-[105px] w-auto max-w-[340px] object-contain"
-            />
+            <Logo dark className="mb-12 text-4xl" />
 
             <h1 className="max-w-[420px] text-[27px] font-bold leading-[1.18] tracking-[-0.035em] text-white">
               Gestão inteligente do tempo para uma operação mais eficiente
@@ -178,11 +190,7 @@ export default function Login() {
           <div className="w-full max-w-[410px]">
             {/* Logo mobile */}
             <div className="mb-8 flex justify-center lg:hidden">
-              <img
-                src="/n3xtime.png"
-                alt="N3xTime"
-                className="max-h-[70px] max-w-[230px] object-contain"
-              />
+              <Logo dark className="text-3xl" />
             </div>
 
             {!companySelection ? (
@@ -220,7 +228,7 @@ export default function Login() {
                         placeholder="Digite seu usuário ou e-mail"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="h-[50px] w-full rounded-[7px] border border-white/[0.14] bg-[#111415] pl-12 pr-4 text-[14px] text-white outline-none transition placeholder:text-white/30 hover:border-white/20 focus:border-[#5bf28a]/65 focus:ring-2 focus:ring-[#5bf28a]/10"
+                        className="login-input h-[44px] w-full rounded-[7px] border border-white/[0.14] bg-[#111415] pl-12 pr-4 text-[14px] text-white outline-none transition placeholder:text-white/30 hover:border-white/20 focus:border-[#5bf28a]/65 focus:ring-2 focus:ring-[#5bf28a]/10"
                       />
                     </div>
                   </div>
@@ -244,7 +252,7 @@ export default function Login() {
                         placeholder="Digite sua senha"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="h-[50px] w-full rounded-[7px] border border-white/[0.14] bg-[#111415] pl-12 pr-12 text-[14px] text-white outline-none transition placeholder:text-white/30 hover:border-white/20 focus:border-[#5bf28a]/65 focus:ring-2 focus:ring-[#5bf28a]/10"
+                        className="login-input h-[44px] w-full rounded-[7px] border border-white/[0.14] bg-[#111415] pl-12 pr-12 text-[14px] text-white outline-none transition placeholder:text-white/30 hover:border-white/20 focus:border-[#5bf28a]/65 focus:ring-2 focus:ring-[#5bf28a]/10"
                       />
 
                       <button
@@ -373,7 +381,7 @@ export default function Login() {
                 <img
                   src="/nivel3-logo.png"
                   alt="Nível 3 Tecnologia"
-                  className="h-[33px] w-auto object-contain"
+                  className="h-[23px] w-auto object-contain"
                 />
               </a>
             </div>

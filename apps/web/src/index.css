@@ -56,6 +56,88 @@
 }
 
 @layer components {
+
+  .n3x-loader-screen {
+    @apply fixed inset-0 z-[9999] flex items-center justify-center bg-[#ececec];
+  }
+
+  .n3x-loader-content {
+    @apply flex flex-col items-center justify-center;
+  }
+
+  .n3x-loader-icon {
+    width: 62px;
+    height: auto;
+    animation: n3xLoaderPulse 1.8s ease-in-out infinite;
+    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.08));
+  }
+
+  .n3x-loader-dots {
+    @apply mt-4 flex items-center gap-2;
+  }
+
+  .n3x-loader-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: #c7c7c7;
+    animation: n3xLoaderDots 1.4s infinite ease-in-out;
+  }
+
+  .n3x-loader-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .n3x-loader-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes n3xLoaderPulse {
+    0%,
+    100% {
+      opacity: 0.88;
+      transform: scale(0.98);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes n3xLoaderDots {
+    0%,
+    80%,
+    100% {
+      opacity: 0.35;
+      transform: translateY(0);
+    }
+    40% {
+      opacity: 1;
+      transform: translateY(-3px);
+    }
+  }
+
+  .login-input {
+    color-scheme: dark;
+  }
+
+  .login-input:-webkit-autofill,
+  .login-input:-webkit-autofill:hover,
+  .login-input:-webkit-autofill:focus,
+  .login-input:-webkit-autofill:active {
+    -webkit-text-fill-color: #ffffff !important;
+    caret-color: #ffffff;
+    -webkit-box-shadow: 0 0 0 1000px #111415 inset !important;
+    box-shadow: 0 0 0 1000px #111415 inset !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    transition: background-color 9999s ease-out 0s;
+  }
+
+  .login-input:autofill {
+    background: #111415 !important;
+    color: #ffffff !important;
+  }
+
   .app-shell {
     @apply min-h-screen bg-[#efeeee] text-[#191717];
   }

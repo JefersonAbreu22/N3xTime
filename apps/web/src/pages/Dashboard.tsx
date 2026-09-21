@@ -5,6 +5,7 @@ import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import DashboardSidebar from '../components/dashboard/DashboardSidebar';
 import DashboardHeader from '../components/dashboard/DashboardHeader';
 import MobileBottomNav from '../components/dashboard/MobileBottomNav';
+import FullScreenLoader from '../components/FullScreenLoader';
 import { authApi } from '../services/authApi';
 import {
   getCurrentDashboardPageTitle,
@@ -122,7 +123,7 @@ export default function Dashboard() {
         )}
 
         <main className="min-h-0 flex-1 overflow-y-auto p-4 pb-24 md:p-5 md:pb-24 xl:p-6 xl:pb-6">
-          <Suspense fallback={<div className="surface-panel py-16 text-center text-[#6e6a6a]">Carregando página...</div>}>
+          <Suspense fallback={<FullScreenLoader />}>
             <Routes>
               <Route path="/" element={<OverviewPage />} />
               <Route path="/my-point" element={requiresTimeTracking ? <MyRecordsPage /> : <Navigate to="/dashboard" replace />} />

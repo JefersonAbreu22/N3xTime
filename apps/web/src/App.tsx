@@ -5,6 +5,7 @@ import { useAuthStore } from './stores/authStore';
 import { usePlatformAuthStore } from './stores/platformAuthStore';
 import { platformApi } from './services/platformApi';
 import ChunkLoadRecovery from './components/ChunkLoadRecovery';
+import FullScreenLoader from './components/FullScreenLoader';
 
 const Kiosk = lazy(() => import('./pages/Kiosk'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -82,13 +83,7 @@ function App() {
         }}
       />
       <ChunkLoadRecovery>
-        <Suspense
-          fallback={
-            <div className="flex min-h-screen items-center justify-center bg-[#f6f4f4] px-6 text-center text-sm text-[#6e6a6a]">
-              Carregando ambiente...
-            </div>
-          }
-        >
+        <Suspense fallback={<FullScreenLoader />}>
           <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/kiosk" element={<Kiosk />} />
