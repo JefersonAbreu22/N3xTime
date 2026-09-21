@@ -43,12 +43,17 @@ export const AttendanceService = {
       include: [{ model: WorkSchedule, as: 'schedule' }],
     });
 
-    if (!user || !user.requires_time_tracking) return null;
+    if (!user || !user.requires_time_tracking || user.status === 'inactive') return null;
 
     const schedule = (user as unknown as { schedule?: WorkSchedule }).schedule;
     const scheduleSummary = getScheduleSummary(schedule);
     const isBeforeHire = Boolean(user.hire_date && dateKey < user.hire_date);
-    const calculationRecords = isBeforeHire ? [] : records;
+    const isOutsideEmployment = Boolean(
+      user.status === 'suspended'
+      && user.suspension_start_date
+      && dateKey >= user.suspension_start_date
+    );
+    const calculationRecords = isBeforeHire || isOutsideEmployment ? [] : records;
 
     // 3. Busca regras da empresa
     const company = await CompanyProfile.findOne();
@@ -66,24 +71,33 @@ export const AttendanceService = {
         target_date: dateKey,
         status: 'approved',
         request_type: {
-          [Op.in]: ['medical_certificate', 'declaration', 'vacation', 'day_off'],
+          [Op.in]: ['medical_certificate', 'declaration', 'vacation', 'day_off', 'external_work'],
         },
       },
     });
 
     const isHoliday = Boolean(holiday);
     const isPaidHoliday = Boolean(holiday?.is_paid);
+    const isExternalWork = justifiedRequests.some((request) => request.request_type === 'external_work');
     const fullDayJustified = justifiedRequests.some((request) => (
-      request.request_type !== 'declaration' || !request.absence_start_time || !request.absence_end_time
+      request.request_type !== 'external_work'
+      && (
+        request.request_type !== 'declaration' || !request.absence_start_time || !request.absence_end_time
+      )
     ));
     const partialAbsenceMinutes = justifiedRequests
       .filter((request) => request.request_type === 'declaration' && request.absence_start_time && request.absence_end_time)
       .reduce((total, request) => total + getTimeRangeMinutes(request.absence_start_time, request.absence_end_time), 0);
-    const isJustified = fullDayJustified || partialAbsenceMinutes > 0;
+    const partialAbsenceStartTime = justifiedRequests
+      .filter((request) => request.request_type === 'declaration' && request.absence_start_time && request.absence_end_time)
+      .map((request) => request.absence_start_time!)
+      .sort()[0] ?? null;
+    const isJustified = fullDayJustified || partialAbsenceMinutes > 0 || isExternalWork;
 
     // 5. Cálculos
     const { workedMinutes, hasCompleteJourney, entryTime, exitTime } = getWorkedMinutesForDay(calculationRecords, schedule, {
       lunchToleranceMinutes: lunchTolerance,
+      justifiedExitTime: partialAbsenceStartTime,
     });
 
     const requiredMinutesPerDay = scheduleSummary?.daily_workload_minutes ?? 0;
@@ -98,25 +112,30 @@ export const AttendanceService = {
       hireDate: user.hire_date,
     });
 
-    let requiredMinutes = requiresWorkday ? requiredMinutesPerDay : 0;
+    let requiredMinutes = isOutsideEmployment ? 0 : (requiresWorkday ? requiredMinutesPerDay : 0);
+    let finalWorkedMinutes = workedMinutes;
+    const todayStr = getDateKey(new Date());
+
+    if (isExternalWork && !isOutsideEmployment && dateKey <= todayStr) {
+      finalWorkedMinutes = Math.max(workedMinutes, requiredMinutes);
+    }
 
     // Regra: se o dia ainda não acabou e a jornada está incompleta, a carga exigida não deve gerar déficit falso
-    const todayStr = getDateKey(new Date());
     if (dateKey > todayStr) {
       requiredMinutes = 0;
-    } else if (dateKey === todayStr && !hasCompleteJourney) {
-      requiredMinutes = Math.min(workedMinutes, requiredMinutes);
+    } else if (dateKey === todayStr && !hasCompleteJourney && !isExternalWork) {
+      requiredMinutes = Math.min(finalWorkedMinutes, requiredMinutes);
     }
 
     if (!fullDayJustified && partialAbsenceMinutes > 0) {
       requiredMinutes = applyPartialAbsenceCredit({
         requiredMinutes,
-        workedMinutes,
+        workedMinutes: finalWorkedMinutes,
         absenceMinutes: partialAbsenceMinutes,
       }).requiredMinutes;
     }
 
-    const balanceMinutes = workedMinutes - requiredMinutes;
+    const balanceMinutes = finalWorkedMinutes - requiredMinutes;
     let overtimeMinutes = 0;
     let deficitMinutes = 0;
 
@@ -138,8 +157,10 @@ export const AttendanceService = {
     }
 
     let status: AttendanceSummary['status'] = 'absent';
-    if (isBeforeHire) {
+    if (isBeforeHire || isOutsideEmployment) {
       status = 'day_off';
+    } else if (isExternalWork) {
+      status = 'justified';
     } else if (isJustified) {
       status = 'justified';
     } else if (isHoliday && workedMinutes === 0) {
@@ -154,18 +175,18 @@ export const AttendanceService = {
     const summaryData = {
       user_id: userId,
       date: dateKey,
-      worked_minutes: workedMinutes,
+      worked_minutes: finalWorkedMinutes,
       required_minutes: requiredMinutes,
       late_minutes: lateMinutes,
       overtime_minutes: overtimeMinutes,
       deficit_minutes: deficitMinutes,
       bank_balance_minutes: balanceMinutes,
       night_minutes: nightMinutes,
-      holiday_worked_minutes: isHoliday && workedMinutes > 0 ? workedMinutes : 0,
+      holiday_worked_minutes: isHoliday && finalWorkedMinutes > 0 ? finalWorkedMinutes : 0,
       status,
-      has_complete_journey: hasCompleteJourney,
+      has_complete_journey: hasCompleteJourney || (isExternalWork && dateKey <= todayStr),
       is_holiday: isHoliday,
-      is_justified_absence: !isBeforeHire && isJustified,
+      is_justified_absence: !isBeforeHire && !isOutsideEmployment && isJustified,
       record_count: calculationRecords.length,
       first_record_time: entryTime,
       last_record_time: exitTime,

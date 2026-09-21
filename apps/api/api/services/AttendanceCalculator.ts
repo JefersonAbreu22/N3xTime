@@ -48,15 +48,18 @@ export const getTimeRangeMinutes = (startTime?: string | null, endTime?: string 
 
 export const applyPartialAbsenceCredit = ({
   requiredMinutes,
+  workedMinutes,
   absenceMinutes,
 }: {
   requiredMinutes: number;
   workedMinutes: number;
   absenceMinutes: number;
 }) => {
-  // Mantém a regra legada: todo o intervalo abonado reduz a carga prevista,
-  // inclusive quando isso transforma o saldo restante do dia em crédito.
-  const creditedMinutes = Math.max(absenceMinutes, 0);
+  // A declaração cobre somente a parte da jornada que ainda não foi trabalhada.
+  // Isso evita crédito duplicado quando o intervalo declarado coincide com horas
+  // já abrangidas pelas marcações de entrada e saída.
+  const uncoveredMinutes = Math.max(requiredMinutes - workedMinutes, 0);
+  const creditedMinutes = Math.min(Math.max(absenceMinutes, 0), uncoveredMinutes);
   return {
     creditedMinutes,
     requiredMinutes: Math.max(requiredMinutes - creditedMinutes, 0),
@@ -126,7 +129,7 @@ export const getNightMinutesBetween = (startValue: Date | string | null, endValu
 export const getWorkedMinutesForDay = (
   records: TimeRecord[],
   schedule?: WorkSchedule | null,
-  options?: { lunchToleranceMinutes?: number }
+  options?: { lunchToleranceMinutes?: number; justifiedExitTime?: string | null }
 ) => {
   const validRecords = records.filter((record) => record.status !== 'rejected').sort(
     (a, b) => new Date(a.record_time).getTime() - new Date(b.record_time).getTime()
@@ -136,17 +139,44 @@ export const getWorkedMinutesForDay = (
   const lunchStartRecord = validRecords.find((record) => record.record_type === 'lunch_start');
   const lunchEndRecord = validRecords.find((record) => record.record_type === 'lunch_end');
 
-  if (!entryRecord || !exitRecord || entryRecord.id === exitRecord.id) {
+  if (!entryRecord) {
     return {
       workedMinutes: 0,
       hasCompleteJourney: false,
-      entryTime: entryRecord?.record_time ?? null,
+      entryTime: null,
       exitTime: null,
       deductedLunchMinutes: 0,
     };
   }
 
-  const rawWorkedMinutes = Math.round((new Date(exitRecord.record_time).getTime() - new Date(entryRecord.record_time).getTime()) / 60000);
+  const hasActualExit = Boolean(exitRecord && entryRecord.id !== exitRecord.id);
+  let effectiveExitTime: Date | string | null = hasActualExit ? exitRecord!.record_time : null;
+
+  if (!effectiveExitTime && options?.justifiedExitTime) {
+    const [hours, minutes] = String(options.justifiedExitTime).slice(0, 5).split(':').map(Number);
+    const justifiedExit = new Date(entryRecord.record_time);
+    justifiedExit.setHours(hours, minutes, 0, 0);
+    const lastRecordTime = validRecords.reduce(
+      (latest, record) => Math.max(latest, new Date(record.record_time).getTime()),
+      new Date(entryRecord.record_time).getTime()
+    );
+
+    if (Number.isFinite(hours) && Number.isFinite(minutes) && justifiedExit.getTime() >= lastRecordTime) {
+      effectiveExitTime = justifiedExit;
+    }
+  }
+
+  if (!effectiveExitTime) {
+    return {
+      workedMinutes: 0,
+      hasCompleteJourney: false,
+      entryTime: entryRecord.record_time,
+      exitTime: null,
+      deductedLunchMinutes: 0,
+    };
+  }
+
+  const rawWorkedMinutes = Math.round((new Date(effectiveExitTime).getTime() - new Date(entryRecord.record_time).getTime()) / 60000);
   let actualLunchMinutes = null;
   if (lunchStartRecord && lunchEndRecord) {
     actualLunchMinutes = Math.max(
@@ -162,14 +192,14 @@ export const getWorkedMinutesForDay = (
     deductedLunchMinutes = actualLunchMinutes;
   }
 
-  const hasCompleteJourney = true;
+  const hasCompleteJourney = hasActualExit;
   const workedMinutes = Math.max(rawWorkedMinutes - deductedLunchMinutes, 0);
 
   return {
     workedMinutes,
     hasCompleteJourney,
     entryTime: entryRecord.record_time,
-    exitTime: exitRecord.record_time,
+    exitTime: hasActualExit ? exitRecord!.record_time : null,
     deductedLunchMinutes,
   };
 };

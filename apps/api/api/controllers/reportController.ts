@@ -195,7 +195,7 @@ const getDateKey = (value: Date | string) => {
 const getWorkedMinutesForDay = (
   records: TimeRecord[],
   schedule?: WorkSchedule | null,
-  options?: { lunchToleranceMinutes?: number }
+  options?: { lunchToleranceMinutes?: number; justifiedExitTime?: string | null }
 ) => {
   const validRecords = records.filter((record) => record.status !== 'rejected').sort(
     (a, b) => new Date(a.record_time).getTime() - new Date(b.record_time).getTime()
@@ -218,9 +218,22 @@ const getWorkedMinutesForDay = (
   // Considera a jornada em andamento se a entrada foi há menos de 16 horas
   const hoursSinceEntry = (new Date().getTime() - new Date(entryRecord.record_time).getTime()) / 3600000;
   const inProgress = hoursSinceEntry < 16;
+  let justifiedExitTime: Date | null = null;
+  if (!exitRecord && options?.justifiedExitTime) {
+    const [hours, minutes] = String(options.justifiedExitTime).slice(0, 5).split(':').map(Number);
+    const candidate = new Date(entryRecord.record_time);
+    candidate.setHours(hours, minutes, 0, 0);
+    const lastRecordTime = validRecords.reduce(
+      (latest, record) => Math.max(latest, new Date(record.record_time).getTime()),
+      new Date(entryRecord.record_time).getTime()
+    );
+    if (Number.isFinite(hours) && Number.isFinite(minutes) && candidate.getTime() >= lastRecordTime) {
+      justifiedExitTime = candidate;
+    }
+  }
   const effectiveExitTime = (exitRecord && entryRecord.id !== exitRecord.id) 
     ? exitRecord.record_time 
-    : (inProgress ? new Date().toISOString() : entryRecord.record_time);
+    : (justifiedExitTime ?? (inProgress ? new Date().toISOString() : entryRecord.record_time));
     
   const rawWorkedMinutes = Math.round((new Date(effectiveExitTime).getTime() - new Date(entryRecord.record_time).getTime()) / 60000);
   const plannedLunchMinutes = Number(schedule?.lunch_duration ?? 0);
@@ -297,6 +310,13 @@ const getWeekday = (dateKey: string) => {
 };
 
 const isDateBeforeHire = (dateKey: string, hireDate?: string | null) => Boolean(hireDate && dateKey < hireDate);
+const isDateOutsideEmployment = (dateKey: string, nonWorkingFromDate?: string | null) => (
+  Boolean(nonWorkingFromDate && dateKey >= nonWorkingFromDate)
+);
+
+const getNonWorkingFromDate = (user: User) => (
+  user.status === 'suspended' ? user.suspension_start_date : null
+);
 
 const shouldRequireWorkday = ({
   dateKey,
@@ -376,12 +396,14 @@ const buildAttendanceMetrics = (
     allHolidayDates?: Set<string>;
     justifiedAbsenceDates: Set<string>;
     partialAbsenceMinutesByDate?: Map<string, number>;
+    partialAbsenceStartTimeByDate?: Map<string, string>;
     externalWorkDates?: Set<string>;
     nightShiftStart: string;
     nightShiftEnd: string;
     lateToleranceMinutes: number;
     lunchToleranceMinutes: number;
     hireDate?: string | null;
+    nonWorkingFromDate?: string | null;
   }
 ) => {
   const recordsByDate = new Map<string, TimeRecord[]>();
@@ -421,7 +443,7 @@ const buildAttendanceMetrics = (
   }>();
 
   const dailyBalances = getDateKeysInRange(options.start, options.end).map((date) => {
-      if (isDateBeforeHire(date, options.hireDate)) {
+      if (isDateBeforeHire(date, options.hireDate) || isDateOutsideEmployment(date, options.nonWorkingFromDate)) {
         return {
           date,
           entryTime: null,
@@ -442,6 +464,7 @@ const buildAttendanceMetrics = (
       const dayRecords = recordsByDate.get(date) ?? [];
       const { workedMinutes, hasCompleteJourney, entryTime, exitTime } = getWorkedMinutesForDay(dayRecords, schedule, {
         lunchToleranceMinutes: options.lunchToleranceMinutes,
+        justifiedExitTime: options.partialAbsenceStartTimeByDate?.get(date),
       });
       const requiresWorkday = shouldRequireWorkday({
         dateKey: date,
@@ -487,7 +510,7 @@ const buildAttendanceMetrics = (
       }
 
       let finalWorkedMinutes = workedMinutes;
-      if (isExternalWork) {
+      if (isExternalWork && date <= todayStr) {
         finalWorkedMinutes = Math.max(workedMinutes, expectedMinutes);
       }
 
@@ -543,7 +566,7 @@ const buildAttendanceMetrics = (
         monthBucket.holidayWorkedMinutes += finalWorkedMinutes;
       }
 
-      if ((dayRecords.length > 0 && hasCompleteJourney) || isExternalWork) {
+      if ((dayRecords.length > 0 && hasCompleteJourney) || (isExternalWork && date <= todayStr)) {
         completeDays += 1;
       } else if (dayRecords.length > 0) {
         incompleteDays += 1;
@@ -566,7 +589,7 @@ const buildAttendanceMetrics = (
         requiredMinutes,
         expectedMinutes,
         balanceMinutes,
-        hasCompleteJourney: hasCompleteJourney || isExternalWork,
+        hasCompleteJourney: hasCompleteJourney || (isExternalWork && date <= todayStr),
         nightMinutes,
         isHoliday: isHolidayAny,
         holidayType: isHolidayAny ? (isUnpaidHoliday ? 'unpaid' as const : 'paid' as const) : null,
@@ -599,9 +622,9 @@ const buildDailyTimeline = (
   dateKey: string,
   records: TimeRecord[],
   schedule?: WorkSchedule | null,
-  options?: { lunchToleranceMinutes?: number; lateToleranceMinutes?: number; isJustified?: boolean; partialAbsenceMinutes?: number; isHoliday?: boolean; isExternalWork?: boolean; hireDate?: string | null; }
+  options?: { lunchToleranceMinutes?: number; lateToleranceMinutes?: number; isJustified?: boolean; partialAbsenceMinutes?: number; partialAbsenceStartTime?: string | null; isHoliday?: boolean; isExternalWork?: boolean; hireDate?: string | null; nonWorkingFromDate?: string | null; }
 ) => {
-  if (isDateBeforeHire(dateKey, options?.hireDate)) {
+  if (isDateBeforeHire(dateKey, options?.hireDate) || isDateOutsideEmployment(dateKey, options?.nonWorkingFromDate)) {
     return {
       status: 'absent' as const,
       entryTime: null,
@@ -650,7 +673,7 @@ const buildDailyTimeline = (
     else if (dateKey === todayStr && !isExternalWork) requiredMinutes = 0; // Se não tem batida hoje ainda, não dá deficit antecipado
     
     let finalWorkedMinutes = 0;
-    if (isExternalWork) {
+    if (isExternalWork && dateKey <= todayStr) {
       finalWorkedMinutes = expectedMinutes;
       requiredMinutes = expectedMinutes;
     }
@@ -663,7 +686,7 @@ const buildDailyTimeline = (
     }
     
     return {
-      status: isExternalWork ? 'complete' as const : 'absent' as const,
+      status: isExternalWork && dateKey <= todayStr ? 'complete' as const : 'absent' as const,
       entryTime: null,
       lunchStartTime: null,
       lunchEndTime: null,
@@ -680,7 +703,10 @@ const buildDailyTimeline = (
   const lunchStartRecord = validRecords.find((record) => record.record_type === 'lunch_start');
   const lunchEndRecord = validRecords.find((record) => record.record_type === 'lunch_end');
   const exitRecord = [...validRecords].reverse().find((record) => record.record_type === 'exit');
-  const workedSummary = getWorkedMinutesForDay(validRecords, schedule, options);
+  const workedSummary = getWorkedMinutesForDay(validRecords, schedule, {
+    lunchToleranceMinutes: options?.lunchToleranceMinutes,
+    justifiedExitTime: options?.partialAbsenceStartTime,
+  });
   
   let lateMinutes = 0;
   if (workedSummary.entryTime && schedule?.entry_time && !isExternalWork) {
@@ -704,7 +730,7 @@ const buildDailyTimeline = (
   }
   
   let finalWorkedMinutes = workedSummary.workedMinutes;
-  if (isExternalWork) {
+  if (isExternalWork && dateKey <= todayStr) {
     finalWorkedMinutes = Math.max(workedSummary.workedMinutes, expectedMinutes);
     requiredMinutes = expectedMinutes;
   }
@@ -719,7 +745,7 @@ const buildDailyTimeline = (
   const hasExit = Boolean(exitRecord);
 
   return {
-    status: (hasExit || isExternalWork) ? 'complete' as const : 'in_progress' as const,
+    status: (hasExit || (isExternalWork && dateKey <= todayStr)) ? 'complete' as const : 'in_progress' as const,
     entryTime: formatTimeLabel(entryRecord?.record_time),
     lunchStartTime: formatTimeLabel(lunchStartRecord?.record_time),
     lunchEndTime: formatTimeLabel(lunchEndRecord?.record_time),
@@ -753,7 +779,7 @@ const getScopedUsers = async (req: AuthRequest, departmentId?: number | null, us
 
   const users = await User.findAll({
     where,
-    attributes: ['id', 'name', 'registration_number', 'department_id', 'manager_id', 'work_type', 'status', 'remote_clock_in_enabled', 'hire_date'],
+    attributes: ['id', 'name', 'registration_number', 'department_id', 'manager_id', 'work_type', 'status', 'remote_clock_in_enabled', 'hire_date', 'suspension_start_date'],
     include: [
       { model: Department, as: 'department', attributes: ['id', 'name'], required: false },
       { model: User, as: 'manager', attributes: ['id', 'name'], required: false },
@@ -789,7 +815,7 @@ const getScopedUser = async (req: AuthRequest, userId: number) => {
 
   const user = await User.findOne({
     where,
-    attributes: ['id', 'name', 'registration_number', 'department_id', 'manager_id', 'hire_date'],
+    attributes: ['id', 'name', 'registration_number', 'department_id', 'manager_id', 'status', 'hire_date', 'suspension_start_date'],
     include: [
       { model: Department, as: 'department', attributes: ['id', 'name'], required: false },
       { model: User, as: 'manager', attributes: ['id', 'name'], required: false },
@@ -836,6 +862,7 @@ const getReportingContext = async (userIds: number[], start: Date, end: Date) =>
   
   const justifiedAbsencesByUser = new Map<number, Set<string>>();
   const partialAbsenceMinutesByUser = new Map<number, Map<string, number>>();
+  const partialAbsenceStartTimeByUser = new Map<number, Map<string, string>>();
   const externalWorkByUser = new Map<number, Set<string>>();
   
   for (const request of approvedRequests) {
@@ -848,6 +875,13 @@ const getReportingContext = async (userIds: number[], start: Date, end: Date) =>
       const dateKey = String(request.target_date);
       bucket.set(dateKey, (bucket.get(dateKey) ?? 0) + getTimeRangeMinutes(request.absence_start_time, request.absence_end_time));
       partialAbsenceMinutesByUser.set(request.user_id, bucket);
+
+      const startTimeBucket = partialAbsenceStartTimeByUser.get(request.user_id) ?? new Map<string, string>();
+      const currentStartTime = startTimeBucket.get(dateKey);
+      if (!currentStartTime || request.absence_start_time < currentStartTime) {
+        startTimeBucket.set(dateKey, request.absence_start_time);
+      }
+      partialAbsenceStartTimeByUser.set(request.user_id, startTimeBucket);
     } else {
       const bucket = justifiedAbsencesByUser.get(request.user_id) ?? new Set<string>();
       bucket.add(String(request.target_date));
@@ -863,6 +897,7 @@ const getReportingContext = async (userIds: number[], start: Date, end: Date) =>
     allHolidayDates,
     justifiedAbsencesByUser,
     partialAbsenceMinutesByUser,
+    partialAbsenceStartTimeByUser,
     externalWorkByUser,
   };
 };
@@ -932,12 +967,14 @@ const buildMonthlyClosingSnapshot = async (periodMonth: string) => {
         allHolidayDates: reportingContext.allHolidayDates,
         justifiedAbsenceDates: reportingContext.justifiedAbsencesByUser.get(user.id) ?? new Set<string>(),
         partialAbsenceMinutesByDate: reportingContext.partialAbsenceMinutesByUser.get(user.id) ?? new Map<string, number>(),
+        partialAbsenceStartTimeByDate: reportingContext.partialAbsenceStartTimeByUser.get(user.id) ?? new Map<string, string>(),
         externalWorkDates: reportingContext.externalWorkByUser.get(user.id) ?? new Set<string>(),
         nightShiftStart,
         nightShiftEnd,
         lateToleranceMinutes,
         lunchToleranceMinutes,
         hireDate: user.hire_date,
+        nonWorkingFromDate: getNonWorkingFromDate(user),
       });
 
     acc.workedMinutesTotal += metrics.workedMinutesTotal;
@@ -1222,12 +1259,14 @@ export const getHrSummary = async (req: AuthRequest, res: Response) => {
         allHolidayDates: reportingContext.allHolidayDates,
         justifiedAbsenceDates: reportingContext.justifiedAbsencesByUser.get(user.id) ?? new Set<string>(),
         partialAbsenceMinutesByDate: reportingContext.partialAbsenceMinutesByUser.get(user.id) ?? new Map<string, number>(),
+        partialAbsenceStartTimeByDate: reportingContext.partialAbsenceStartTimeByUser.get(user.id) ?? new Map<string, string>(),
         externalWorkDates: reportingContext.externalWorkByUser.get(user.id) ?? new Set<string>(),
         nightShiftStart,
         nightShiftEnd,
         lateToleranceMinutes,
         lunchToleranceMinutes,
         hireDate: user.hire_date,
+        nonWorkingFromDate: getNonWorkingFromDate(user),
       });
       acc.workedMinutesTotal += metrics.workedMinutesTotal;
       acc.requiredMinutesTotal += metrics.requiredMinutesTotal;
@@ -1596,12 +1635,14 @@ export const getCumulativeBankHours = async (req: AuthRequest, res: Response) =>
       allHolidayDates: reportingContext.allHolidayDates,
       justifiedAbsenceDates: reportingContext.justifiedAbsencesByUser.get(user.id) ?? new Set<string>(),
       partialAbsenceMinutesByDate: reportingContext.partialAbsenceMinutesByUser.get(user.id) ?? new Map<string, number>(),
+      partialAbsenceStartTimeByDate: reportingContext.partialAbsenceStartTimeByUser.get(user.id) ?? new Map<string, string>(),
       externalWorkDates: reportingContext.externalWorkByUser.get(user.id) ?? new Set<string>(),
       nightShiftStart: reportingContext.companyProfile?.night_shift_start ?? '22:00',
       nightShiftEnd: reportingContext.companyProfile?.night_shift_end ?? '05:00',
       lateToleranceMinutes: Number(reportingContext.companyProfile?.late_tolerance_minutes ?? 5),
       lunchToleranceMinutes: Number(reportingContext.companyProfile?.lunch_tolerance_minutes ?? 10),
       hireDate: user.hire_date,
+      nonWorkingFromDate: getNonWorkingFromDate(user),
     });
 
     return res.json({
@@ -1700,7 +1741,12 @@ export const getAttendanceReport = async (req: AuthRequest, res: Response) => {
       const dailyView = buildDailyTimeline(getDateKey(new Date()), todayRecordsByUser.get(user.id) ?? [], user.schedule, {
         lunchToleranceMinutes,
         lateToleranceMinutes,
+        isJustified: (reportingContext.justifiedAbsencesByUser.get(user.id) ?? new Set()).has(getDateKey(new Date())),
+        partialAbsenceMinutes: reportingContext.partialAbsenceMinutesByUser.get(user.id)?.get(getDateKey(new Date())) ?? 0,
+        partialAbsenceStartTime: reportingContext.partialAbsenceStartTimeByUser.get(user.id)?.get(getDateKey(new Date())) ?? null,
+        isExternalWork: (reportingContext.externalWorkByUser.get(user.id) ?? new Set()).has(getDateKey(new Date())),
         hireDate: user.hire_date,
+        nonWorkingFromDate: getNonWorkingFromDate(user),
       });
       const uniqueDays = new Set(
         userRecords
@@ -1737,8 +1783,10 @@ export const getAttendanceReport = async (req: AuthRequest, res: Response) => {
              isHoliday: reportingContext.holidayDates.has(dateKey),
              isJustified: (reportingContext.justifiedAbsencesByUser.get(user.id) ?? new Set()).has(dateKey),
              partialAbsenceMinutes: reportingContext.partialAbsenceMinutesByUser.get(user.id)?.get(dateKey) ?? 0,
+             partialAbsenceStartTime: reportingContext.partialAbsenceStartTimeByUser.get(user.id)?.get(dateKey) ?? null,
              isExternalWork: (reportingContext.externalWorkByUser.get(user.id) ?? new Set()).has(dateKey),
-             hireDate: user.hire_date
+             hireDate: user.hire_date,
+             nonWorkingFromDate: getNonWorkingFromDate(user),
            })
          };
       });
@@ -1751,12 +1799,14 @@ export const getAttendanceReport = async (req: AuthRequest, res: Response) => {
         allHolidayDates: reportingContext.allHolidayDates,
         justifiedAbsenceDates: reportingContext.justifiedAbsencesByUser.get(user.id) ?? new Set<string>(),
         partialAbsenceMinutesByDate: reportingContext.partialAbsenceMinutesByUser.get(user.id) ?? new Map<string, number>(),
+        partialAbsenceStartTimeByDate: reportingContext.partialAbsenceStartTimeByUser.get(user.id) ?? new Map<string, string>(),
         externalWorkDates: reportingContext.externalWorkByUser.get(user.id) ?? new Set<string>(),
         nightShiftStart,
         nightShiftEnd,
         lateToleranceMinutes,
         lunchToleranceMinutes,
         hireDate: user.hire_date,
+        nonWorkingFromDate: getNonWorkingFromDate(user),
       });
       const firstRecord = userRecords[0] ?? null;
       const lastRecord = userRecords[userRecords.length - 1] ?? null;
@@ -1840,8 +1890,11 @@ export const getDailySheetReport = async (req: AuthRequest, res: Response) => {
     })) as Array<TimeRecord & { reviewer?: User | null }>;
 
     const isBeforeHire = isDateBeforeHire(date, scopedUser.hire_date);
-    const calculationRecords = isBeforeHire ? [] : dayRecords;
+    const isOutsideEmployment = isDateOutsideEmployment(date, getNonWorkingFromDate(scopedUser));
+    const calculationRecords = isBeforeHire || isOutsideEmployment ? [] : dayRecords;
     const partialAbsenceMinutes = reportingContext.partialAbsenceMinutesByUser.get(scopedUser.id)?.get(date) ?? 0;
+    const partialAbsenceStartTime = reportingContext.partialAbsenceStartTimeByUser.get(scopedUser.id)?.get(date) ?? null;
+    const isExternalWork = (reportingContext.externalWorkByUser.get(scopedUser.id) ?? new Set()).has(date);
 
     const dailyTimeline = buildDailyTimeline(date, calculationRecords, scopedUser.schedule, {
       lunchToleranceMinutes, 
@@ -1849,9 +1902,15 @@ export const getDailySheetReport = async (req: AuthRequest, res: Response) => {
       isHoliday: reportingContext.holidayDates.has(date),
       isJustified: (reportingContext.justifiedAbsencesByUser.get(scopedUser.id) ?? new Set()).has(date),
       partialAbsenceMinutes,
+      partialAbsenceStartTime,
+      isExternalWork,
       hireDate: scopedUser.hire_date,
+      nonWorkingFromDate: getNonWorkingFromDate(scopedUser),
     });
-    const workedSummary = getWorkedMinutesForDay(calculationRecords, scopedUser.schedule, { lunchToleranceMinutes });
+    const workedSummary = getWorkedMinutesForDay(calculationRecords, scopedUser.schedule, {
+      lunchToleranceMinutes,
+      justifiedExitTime: partialAbsenceStartTime,
+    });
     const validRecords = calculationRecords.filter((record) => record.status !== 'rejected');
     const justifiedDates = reportingContext.justifiedAbsencesByUser.get(scopedUser.id) ?? new Set<string>();
     const weekday = getWeekday(date);
@@ -1918,9 +1977,9 @@ export const getDailySheetReport = async (req: AuthRequest, res: Response) => {
           nightMinutes,
           holidayWorkedMinutes: reportingContext.allHolidayDates.has(date) ? workedSummary.workedMinutes : 0,
           isHoliday: reportingContext.allHolidayDates.has(date),
-          isJustifiedAbsence: !isBeforeHire && (justifiedDates.has(date) || partialAbsenceMinutes > 0),
+          isJustifiedAbsence: !isBeforeHire && !isOutsideEmployment && (justifiedDates.has(date) || partialAbsenceMinutes > 0),
           recordCount: dailyTimeline.recordCount,
-          hasCompleteJourney: workedSummary.hasCompleteJourney,
+          hasCompleteJourney: workedSummary.hasCompleteJourney || dailyTimeline.status === 'complete',
           entryTime: dailyTimeline.entryTime,
           lunchStartTime: dailyTimeline.lunchStartTime,
           lunchEndTime: dailyTimeline.lunchEndTime,
