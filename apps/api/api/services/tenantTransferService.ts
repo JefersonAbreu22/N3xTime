@@ -18,6 +18,13 @@ const LEGACY_COLUMN_ALIASES: Readonly<Record<string, Readonly<Record<string, str
     absence_end_time: 'excused_end_time',
   },
 };
+// Older dumps do not declare this reference as a database FK, but it must be
+// remapped when tenant IDs are regenerated during import.
+const LEGACY_TENANT_REFERENCES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  employee_requests: {
+    target_department_id: 'departments',
+  },
+};
 let importInProgress = false;
 
 export const mapLegacyTenantColumns = (table: string, row: Record<string, unknown>) => {
@@ -251,13 +258,21 @@ export const importTenantDump = async (companyId: number, buffer: Buffer, replac
       }
       for (const table of ordered) {
         const targetCols = byTable.get(table) || []; const allowed = new Set(targetCols.map(c => c.COLUMN_NAME));
-        const tableFks = fks.filter(f => f.TABLE_NAME === table); const [rows] = await source.query<RowDataPacket[]>(`SELECT * FROM ${ident(table)}`);
+        const tableFks = fks.filter(f => f.TABLE_NAME === table);
+        const [rows] = await source.query<RowDataPacket[]>(`SELECT * FROM ${ident(table)}`);
         const map = new Map<number, number>(); idMaps.set(table, map);
         for (const row of rows) {
           const oldId = Number(row.id); const payload: Record<string, ExecuteValues> = {};
           for (const [key, value] of Object.entries(row)) if (allowed.has(key) && key !== 'id' && key !== 'company_id') payload[key] = value;
           for (const [key, value] of Object.entries(mapLegacyTenantColumns(table, row))) if (allowed.has(key)) payload[key] = value;
           payload.company_id = companyId;
+          for (const [column, referenceTable] of Object.entries(LEGACY_TENANT_REFERENCES[table] || {})) {
+            const raw = payload[column];
+            if (raw === null || raw === undefined || !importTables.includes(referenceTable)) continue;
+            const mapped = idMaps.get(referenceTable)?.get(Number(raw));
+            if (!mapped) throw new Error(`Legacy reference not mapped: ${table}.${column} -> ${referenceTable}#${raw}`);
+            payload[column] = mapped;
+          }
           for (const fk of tableFks) {
             if (fk.COLUMN_NAME === 'company_id') continue;
             const raw = payload[fk.COLUMN_NAME]; if (raw === null || raw === undefined) continue;
